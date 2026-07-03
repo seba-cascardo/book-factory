@@ -1,0 +1,145 @@
+# outline/units.yaml — per-unit entry template (multi-shape)
+#
+# outline/units.yaml is a LIST of entries, one per unit, in the order the
+# READER meets them (files are unit-NN regardless of writing order). Each
+# entry uses the SHAPE for the project's profile — pick one block below and
+# delete the rest. See references/outlining.md for the per-profile verification
+# rules and how to present the outline to the human.
+#
+#   Profile           Shape to use
+#   ----------------  --------------------------------------------------------
+#   book-technical    § TECHNICAL
+#   book-literary     § LITERARY
+#   corporate-guide   § LIGHT (corporate-guide variant)
+#   product-docs      § LIGHT (product-docs variant)
+#   scientific-paper  § SCIENTIFIC-PAPER
+#
+# `unit` numbers are reading-order and are stable ids for drafts/unit-NN/.
+# When talking to the human, use the profile's word (chapter | article |
+# section) — the files stay unit-NN.
+
+units:
+
+  # ==========================================================================
+  # § TECHNICAL  —  profile: book-technical
+  # Verified for dependency order, orphans, exercise coverage, pacing.
+  # ==========================================================================
+  - unit: 01
+    title: ""
+    part: ""                    # section/part this unit belongs to
+    purpose: ""                 # ONE sentence: what the reader can DO after this unit
+    concepts_introduced: []     # KG ids this unit is the authoritative intro for
+    concepts_used:              # KG ids used here + where each was introduced
+      - id: ""
+        introduced_in: unit-NN  # dependency verification runs on this; must be earlier
+    structure:                  # section headings with one-line coverage each
+      - heading: ""
+        covers: ""
+    examples:                   # what each demonstrates; runnable or not
+      - shows: ""
+        runnable: true
+    exercises:                  # prompt + solution sketch + concepts exercised
+      - prompt: ""
+        solution_sketch: ""
+        concepts: []
+    forward_references:         # concepts DELIBERATELY deferred (declared = fine)
+      - concept: ""
+        deferred_to: unit-NN
+        why: ""                 # one-line justification for deferring
+    risks: []                   # where readers get stuck; misconceptions to preempt
+    closing: ""                 # per the profile's closing policy (pedagogy-3)
+    target_words: 0
+
+  # ==========================================================================
+  # § LITERARY  —  profile: book-literary
+  # Verified for arc progression, tension curve, subplot cadence, midpoint,
+  # and the secondary-character line check.
+  # ==========================================================================
+  - unit: 01
+    title: ""
+    pov: ""                     # whose viewpoint
+    timeline: ""                # story chronology (may differ from reading order)
+    location: ""
+    beats:                      # every beat typed scene | exposition-within-scene
+      - type: scene
+        summary: ""
+        pause: ""               # OPTIONAL: name the turn (interruption / internal
+                                # change) that ends a deliberate slow beat — craft-2
+      - type: exposition-within-scene
+        summary: ""
+        information: ""         # the fact being delivered
+        actioned_by: ""         # who wants it / withholds it / what it costs — craft-1
+    emotional_arc:              # the POV's inner movement across the unit
+      start: ""
+      shift: ""
+      end: ""
+    plot_threads:               # thread bookkeeping
+      advances: []
+      introduces: []
+      resolves: []
+    chekhov:                    # plants and payoffs (tracked in continuity-tracker)
+      load: []                  # what is planted here
+      fire: []                  # what earlier plant pays off here
+    reveals:
+      to_reader: []
+      to_characters: []
+    characters_present: []      # feeds the secondary-character tally across units
+    secondary_lines:            # guarantee a line of their own for 2+-appearance chars
+      - character: ""
+        note: ""                # the want / objection / joke that is theirs — craft-3
+    continuity_notes: ""
+    target_words: 0
+    notes: ""
+
+  # ==========================================================================
+  # § LIGHT  —  corporate-guide variant  (profile: corporate-guide)
+  # Every opening self-contained; cross-refs by topic, never numbered.
+  # ==========================================================================
+  - unit: 01
+    title: ""
+    purpose: ""                 # what the employee can do or decide after reading
+    audience_moment: ""         # WHEN someone reaches for this — a meeting, an
+                                # incident, an approval request
+    key_points: []
+    practice:                   # OPTIONAL — only if enabled in meta.yaml; internal cases
+      - prompt: ""              # "apply this to your own [internal case]"
+    templates_and_checklists: [] # artifacts this section ships (Note/Template/Checklist)
+    cross_refs: []              # TOPIC-based only: "escalation paths" — never "Section 3"
+    target_words: 0
+
+  # ==========================================================================
+  # § LIGHT  —  product-docs variant  (profile: product-docs)
+  # Modular STRICT: no forward references, no assumed prior reading. Prereqs
+  # are LINKED. `description`, `tags`, `related` also become the article's
+  # final/unit-NN.md frontmatter.
+  # ==========================================================================
+  - unit: 01
+    title: ""                   # task-phrased: "Rotate an API key", not "API keys"
+    description: ""             # ONE sentence, ≤160 chars — becomes frontmatter/search
+    user_goal: ""
+    prerequisites: []           # LINKS to other articles (unit ids/slugs) — never assumed
+    structure:                  # steps or sections
+      - heading: ""
+        covers: ""
+    tags: []                    # from the finite shared tag list defined in the outline
+    related: []                 # articles to surface at the end (related-links closing)
+    target_words: 0
+
+  # ==========================================================================
+  # § SCIENTIFIC-PAPER  —  profile: scientific-paper
+  # Reading-order `unit`; the pipeline WALKS units by ascending
+  # writing_order_rank: Methods → Results → Introduction → Discussion →
+  # Abstract last (Abstract gets the highest rank).
+  # ==========================================================================
+  - unit: 01
+    name: ""                    # Abstract | Introduction | Methods | Results | ...
+    writing_order_rank: 0       # integer walk order; Abstract gets the highest rank
+    claims: []                  # claim ids from bible/claims-map.yaml this section argues
+    key_moves: []               # the section's argumentative steps, one line each
+    figures_tables:             # planned, each tied to the claim it supports
+      - ref: ""                 # "Figure 2" / "Table 1"
+        supports_claim: ""      # claim id
+    evidence_needed: ""         # what must be grounded before this section can gate
+    checklist: ""               # Methods → reproducibility checklist;
+                                # Discussion → Limitations is a MANDATORY move (critical)
+    target_words: 0

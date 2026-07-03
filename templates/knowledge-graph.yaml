@@ -1,0 +1,98 @@
+# bible/knowledge-graph.yaml — concept dependency map
+#
+# Phase 1.5 artifact. See references/knowledge-graph.md for the full spec,
+# the two modes (full vs terminology-only), and profile applicability.
+#
+# The graph is the authoritative list of what this document teaches and how
+# the ideas depend on each other. Outline, Writer, Technical Reviewer, Critic,
+# and Continuity Guardian all read it.
+#
+# TWO MODES (the profile decides which):
+#   full            book-technical, scientific-paper — mandatory. Concepts
+#                   carry dependency edges and placement; ordering is checked.
+#   terminology     corporate-guide, product-docs — a controlled vocabulary.
+#                   Concepts carry ONLY id/name/kind/one_liner/contrasts_with;
+#                   OMIT requires, builds_on, introduced_in, reinforced_in.
+#                   There is no reading order to enforce, so ordering fields
+#                   would give false comfort — do not fill them "just in case".
+#   (book-literary uses plot-structure.md / arcs.md / timeline.md instead of
+#    a graph — it has no knowledge-graph.yaml at all.)
+#
+# Files use unit-NN; when talking to the human, say chapter / article /
+# section per the profile.
+
+prerequisites:
+  # Full mode only. What the reader knows on page 1 — the anchors of every
+  # dependency chain. For scientific-paper these are venue-scoped: what the
+  # target venue's typical reviewer already knows (decide against meta.yaml).
+  # One entry per prerequisite, not a prose paragraph. Omit this block
+  # entirely in terminology mode.
+  # Example:
+  # - id: basic_sql
+  #   one_liner: "Comfortable reading SELECT, JOIN, WHERE, GROUP BY queries."
+  # - id: terminal_usage
+  #   one_liner: "Can run commands in bash/zsh; understands pipes and redirection."
+  []
+
+concepts:
+  # Every teachable unit of knowledge the document covers. A reader should be
+  # able to ask "where do I learn X?" for each and get exactly one answer from
+  # the outline.
+  #
+  # Full-mode shape:
+  #   - id: <stable_snake_case_id>          # used in outline + tracker; never renumber
+  #     name: "<Display Name>"               # the ONE canonical name; used in prose + tables
+  #     kind: term | mechanic | pattern | tool | convention | skill
+  #     one_liner: "<definition in one sentence>"
+  #     requires: [<ids>]                    # hard deps — reader cannot grasp this without them. Cycles are bugs.
+  #     builds_on: [<ids>]                   # soft deps — reinforcement; better pedagogy if seen first, not required.
+  #     contrasts_with: [<ids>]              # taught together by contrast; order-agnostic within the pair.
+  #     introduced_in: null                  # set during OUTLINING (e.g., "unit-04"); null until then.
+  #     reinforced_in: []                    # optional — units that revisit it.
+  #
+  # Terminology-mode shape (corporate-guide, product-docs) — reduced:
+  #   - id: escalation_path
+  #     name: "Escalation path"
+  #     kind: term
+  #     one_liner: "The approved routing sequence when an issue exceeds first-line authority."
+  #     contrasts_with: [incident_report]    # near-neighbors readers confuse
+  #   (no requires / builds_on / introduced_in / reinforced_in)
+  #
+  # Full-mode example:
+  # - id: associative_model
+  #   name: "Associative Model"
+  #   kind: mechanic
+  #   one_liner: "In-memory column store with automatic association by shared field names."
+  #   requires: []
+  #   builds_on: []
+  #   contrasts_with: [relational_model]
+  #   introduced_in: null
+  #   reinforced_in: []
+  # - id: set_analysis
+  #   name: "Set Analysis"
+  #   kind: mechanic
+  #   one_liner: "Scoping aggregations to a subset of rows by a set expression."
+  #   requires: [aggregation_functions, field_selections]
+  #   builds_on: [associative_model]
+  #   contrasts_with: []
+  #   introduced_in: null
+  #   reinforced_in: []
+  []
+
+constraints:
+  # Invariants the graph must satisfy before outlining. Verified when the
+  # graph is signed off and at every outline revision. In terminology mode,
+  # only every_concept_has_definition and canonical-name uniqueness apply —
+  # ignore the ordering constraints.
+  no_cycles_in_requires: true               # full mode
+  every_chain_terminates: true              # full mode — in a prerequisite or another concept
+  every_concept_has_definition: true        # both modes
+  every_concept_assigned_to_unit: false     # full mode — flipped to true after outlining
+  # scientific-paper additionally: every claims-map `concepts:` id resolves to
+  # a concept here (a claim may not rest on a term the paper never defines).
+
+open_questions:
+  # Scratchpad while the graph is being built. Should be empty at sign-off.
+  # Example:
+  # - "Is 'variables' a concept on its own or part of 'load script'?"
+  []

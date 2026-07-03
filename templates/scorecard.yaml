@@ -1,0 +1,123 @@
+# drafts/unit-NN/scorecard.yaml — the Critic's machine-readable truth
+#
+# The canonical per-unit artifact is ALWAYS drafts/unit-NN/scorecard.yaml.
+# The verdict is COMPUTED from these items, not asserted — see
+# references/rubric.md § "Verdict computation — AUTHORITATIVE", the only place
+# that rule lives. critique.md renders this file for humans; this file, not
+# that one, carries the authority.
+#
+# One project runs exactly one rubric (nonfiction OR literary), so ids never
+# collide. Emit one row per APPLICABLE rubric item, after applying the two
+# override layers in order: references/profiles/<profile>.md § Rubric deltas,
+# then bible/voice-profile.md § Rhetoric budget (rhet quotas only). Items you
+# cannot evaluate (e.g. reader_pov-* in fast mode) get status: not_applicable
+# with a one-line reason in evidence.
+
+schema_version: "3.0"
+unit: "unit-NN"
+rubric: "nonfiction"             # nonfiction | literary (matches the profile)
+mode: "fast"                     # fast | full — affects minor-fail tolerance
+generated_at: "YYYY-MM-DDTHH:MM:SSZ"
+
+# ─────────────────────────────────────────────────────────────────────────
+# items — every entry has EXACTLY these seven fields (see rubric.md schema):
+#   id              stable id, e.g. scope-1, rhet-3, craft-5
+#   rubric          the family it belongs to
+#   name            one line: what was checked
+#   severity        critical | significant | minor
+#   status          pass | fail | not_applicable
+#   evidence        fails: quoted lines / file:line / one-sentence diagnosis.
+#                   passes: optional — EXCEPT rhet items, where evidence must
+#                   ALWAYS carry the count (pass or fail); a rhet row without a
+#                   count is invalid.
+#   loopback_target fails: Writer | Editor | Humanizer |
+#                   Reader_POV_plus_Humanizer | escalate. null on pass/na.
+# ─────────────────────────────────────────────────────────────────────────
+items:
+  - id: scope-1
+    rubric: scope
+    name: "Unit delivers the outline entry's purpose"
+    severity: critical
+    status: pass
+    evidence: null
+    loopback_target: null
+
+  - id: outline-2
+    rubric: outline
+    name: "Every concepts_used appears earlier, here, or in prerequisites"
+    severity: critical
+    status: pass
+    evidence: null
+    loopback_target: null
+
+  # --- rhet family: evidence ALWAYS carries the count, pass or fail ---
+  - id: rhet-1
+    rubric: rhet
+    name: "Rhetorical questions in prose within quota (<= 2)"
+    severity: significant
+    status: pass
+    evidence: "count=1 (line 84)"      # count REQUIRED even on pass
+    loopback_target: null
+
+  - id: rhet-3
+    rubric: rhet
+    name: "Dramatic-danger lexicon within quota (<= 2)"
+    severity: significant
+    status: fail
+    evidence: "count=4 (silently x2 L40 L91, hidden cost L120, lurking L131)"
+    loopback_target: Humanizer
+
+  - id: rhet-6
+    rubric: rhet
+    name: "Opening structure differs from the previous unit's"
+    severity: significant
+    status: pass
+    evidence: "this=contrarian-data-point; prev=field-case (differ → pass)"
+    # rhet-6 evidence ALWAYS records both this unit's and the previous unit's
+    # declared opening structure, so the next unit has its reference. First
+    # unit auto-passes with evidence: "this=<structure>; prev=none (first unit)".
+    loopback_target: null
+
+  - id: reader_pov-1
+    rubric: reader_pov
+    name: "No comprehension failure from reader-report survives"
+    severity: critical
+    status: not_applicable
+    evidence: "fast mode — Reader-POV did not run per unit"
+    loopback_target: null
+
+  # … continue for every applicable item in the project's rubric, in the
+  # family order of references/rubric.md. Literary projects emit the literary
+  # families (beats, character, arc, voice, craft, reader_pov, continuity) plus
+  # the rhet subset (rhet-2, rhet-6). Nonfiction emits scope, outline, tech_a,
+  # tech_b, pedagogy, voice, reader_pov, code, consistency, forward_refs, rhet,
+  # profile — as narrowed/extended by the profile's rubric deltas.
+
+# ─────────────────────────────────────────────────────────────────────────
+# computed_verdict — echoes references/rubric.md § Verdict computation.
+# The skill RECOMPUTES this from `items` on read; the Critic caches it here for
+# readability only. If the cached value and the recomputation disagree, the
+# items are the truth — fix the items, never override the verdict.
+#
+# Rule (authoritative copy lives ONLY in rubric.md; reproduced here as the
+# check the Critic must apply, not as a second source of truth):
+#   any fail with loopback_target == escalate     → ESCALATE
+#   count(critical fails) >= 2                     → REWORK   (→ Writer)
+#   count(critical fails) == 1                     → REVISE
+#   count(significant fails) >= 1                  → REVISE
+#   count(minor fails) >= 3 and mode == full       → REVISE
+#   any minor fail                                 → PASS, with notes
+#   else                                           → PASS
+# (Literary uses full-mode minor tolerance.)
+#
+# REVISE target: all failing items share one target → that target; split →
+# target of the highest-severity failing item; still tied → Writer.
+# ─────────────────────────────────────────────────────────────────────────
+computed_verdict: "REVISE"       # PASS | REVISE | REWORK | ESCALATE
+verdict_basis: ">=1 significant fail (rhet-3) → REVISE"   # the rule line hit
+loopback_target: Humanizer       # resolved from the failing items; null on PASS
+
+totals:                          # convenience mirror of the item statuses
+  critical:    { pass: 2, fail: 0, na: 1 }
+  significant: { pass: 2, fail: 1, na: 0 }
+  minor:       { pass: 0, fail: 0, na: 0 }

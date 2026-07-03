@@ -1,0 +1,73 @@
+# bible/claims-map.yaml — claim-to-evidence map (scientific-paper profile)
+#
+# Every claim the paper makes must map to an entry here. This is the
+# artifact that makes overclaiming detectable: the prose may never assert
+# a claim more strongly than its entry states it. If the entry says
+# "improves recall on dataset Z", the prose cannot say "improves recall".
+#
+# Lifecycle:
+#   1. Setup seeds the paper's core claims (status: pending).
+#   2. The Writer adds entries for new claims while drafting and appends
+#      the unit to `sections_used` wherever a claim appears.
+#   3. The Technical Reviewer (Axis C) verifies the evidence and sets
+#      `status`. It never deletes entries — disputes go in tech-review.md.
+#   4. The Critic gates on it: a claim in prose with no entry, or an entry
+#      still `unverifiable` at gate time, is a rubric hit (paper-2,
+#      critical — see references/profiles/scientific-paper.md § Rubric
+#      deltas). Hedge it, cut it, or gather evidence.
+#   5. Phase 5 build generates the .bib from `external` entries joined
+#      with the bibliographic metadata in bible/sources/sources.md.
+#
+# Field reference:
+#   id             stable identifier, claim-NN. Never renumber — prose
+#                  SOURCE comments and digests refer to these ids.
+#   claim          one sentence, stated at EXACTLY the strength the paper
+#                  will assert it (scope, dataset, conditions included).
+#   type           external   — supported by someone else's published work
+#                  own-result — supported by this project's own data
+#   evidence       for external:   { source_id, locator }
+#                    source_id = entry name in bible/sources/sources.md
+#                    locator   = section/page/table inside that source
+#                  for own-result: { artifact, table | figure }
+#                    artifact  = the data file or script that produces the
+#                                number (path relative to project root)
+#                    table/figure = where the paper presents it
+#   status         grounded     — evidence verified to support the claim
+#                  pending      — evidence named but not yet verified
+#                  unverifiable — verification failed or impossible; must
+#                                 be resolved before the unit can gate
+#   sections_used  units whose prose asserts or relies on the claim,
+#                  e.g. [unit-03, unit-05]. Kept current by the Writer;
+#                  drives the per-section claim digests.
+#   concepts       Knowledge-Graph concept ids this claim rests on. Every id
+#                  MUST resolve in bible/knowledge-graph.yaml — checked at KG
+#                  sign-off and again by the paper outliner. [] if the claim
+#                  rests on no formal concept.
+
+claims:
+  # --- Example: external claim (delete once real claims exist) ---
+  - id: claim-01
+    claim: "[What the cited work established, at the strength the paper
+            will repeat it — e.g. 'Method M outperforms baseline B on
+            benchmark X under condition C']"
+    type: external
+    evidence:
+      source_id: "[short name from bible/sources/sources.md]"
+      locator: "[§/page/table inside the source, e.g. '§4.2, Table 3']"
+    status: pending
+    sections_used: []
+    concepts: []                # KG concept ids this claim rests on
+
+  # --- Example: own-result claim (delete once real claims exist) ---
+  - id: claim-02
+    claim: "[What this paper's own data shows — e.g. 'Our approach reduces
+            error by N% on dataset D across 5 seeded runs']"
+    type: own-result
+    evidence:
+      artifact: "[data file or analysis script that produces the number,
+                 e.g. 'analysis/results-summary.csv']"
+      figure: "[where the paper presents it, e.g. 'Figure 2' — use
+              `table:` instead when it is a table]"
+    status: pending
+    sections_used: []
+    concepts: []                # KG concept ids this claim rests on

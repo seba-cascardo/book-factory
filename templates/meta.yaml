@@ -1,0 +1,248 @@
+# bible/meta.yaml — one project's identity, contract, and pipeline config
+#
+# Every agent's context starts here. It is read on every turn, so keep it
+# short, concrete, and current. This is the SINGLE meta template for all five
+# profiles: fill the blocks your profile uses, delete the blocks it doesn't.
+# Inline comments mark which blocks are profile-specific.
+#
+# Phase detection keys on `schema_version` (bottom of file). If it is not
+# "3.0", the skill tells the human this project predates the current skill and
+# offers to re-scaffold — there is no automatic migration.
+
+# ─────────────────────────────────────────────────────────────────────────
+# project — what this is and which profile drives every downstream decision
+# ─────────────────────────────────────────────────────────────────────────
+project:
+  profile: "book-technical"
+  # book-technical | book-literary | corporate-guide | product-docs |
+  #                  scientific-paper
+  # The profile is the master switch. Every agent loads
+  # references/profiles/<profile>.md at the start of its turn; that file sets
+  # the unit name, register prohibitions, opening/closing policy, citation
+  # policy, Reader-POV personas, rubric deltas, and Phase 5 build target. When
+  # this file and the profile disagree on register or structure, the PROFILE
+  # WINS — that is the point of profiles.
+
+  subtype: "tutorial"
+  # book-technical ONLY — delete this key for every other profile.
+  # tutorial | reference | cookbook | textbook | opinion
+  # Reshapes how the Writer motivates and how the Critic weighs pedagogy vs.
+  # completeness. Ignored (and absent) outside book-technical.
+
+  title: "[working title]"
+  subtitle: "[optional — the promise in one line; null if none]"
+  language: "en"                 # prose language of the document (ISO code)
+  language_variant: "en-US"      # en-US | en-GB | es-AR | es-ES | ...
+  # language_variant drives spelling, quotation, and the target-language
+  # equivalents the rhetoric-budget counts (rhet-2, rhet-3) must match.
+
+# ─────────────────────────────────────────────────────────────────────────
+# audience — the most load-bearing block; every agent uses it
+# ─────────────────────────────────────────────────────────────────────────
+audience:
+  primary: "[one-sentence reader persona: who they are, what they already
+             know, what they are trying to do]"
+  prerequisites: "[what the reader MUST already know before unit 1]"
+  not_for: "[who this is NOT for — lets the Writer resist going wide]"
+  experience_level: "beginner"   # beginner | intermediate | advanced
+  known_frustrations: "[what this reader is tired of in existing material on
+                        the topic — the Writer writes against these, the
+                        Reader-POV persona feels them]"
+
+# ─────────────────────────────────────────────────────────────────────────
+# scope — headline only; bible/scope.md carries the full version
+# ─────────────────────────────────────────────────────────────────────────
+scope:
+  covers: "[one sentence: what this document delivers]"
+  does_not_cover: "[what is explicitly out of scope — the Critic's scope-2
+                    check reads bible/scope.md, this is the summary]"
+  depth: "tutorial"              # tutorial | reference | overview | mixed
+
+# ─────────────────────────────────────────────────────────────────────────
+# organization — corporate-guide ONLY (delete for every other profile)
+# ─────────────────────────────────────────────────────────────────────────
+# organization:
+#   name: "[company or team name]"
+#   audience_role: "[the internal role that reads this — e.g. 'new hires on
+#                    the data team']"
+#   internal_context: "[systems, jargon, or process the guide assumes the
+#                       reader lives inside]"
+#   confidentiality: "internal"  # public | internal | confidential
+#   # The register defaults for corporate-guide are already sober; this block
+#   # gives the Writer the internal footing (real system names, real roles)
+#   # and the build step the front matter.
+
+# ─────────────────────────────────────────────────────────────────────────
+# citation_style — scientific-paper ONLY (delete for every other profile)
+# ─────────────────────────────────────────────────────────────────────────
+# citation_style: "apa"          # apa | ieee | vancouver | author-year
+# # Only meaningful when the profile's citation policy is visible-academic.
+# # Drives how the Writer formats in-prose citations and how Phase 5 renders
+# # the bibliography from bible/claims-map.yaml + bible/sources/sources.md.
+
+# ─────────────────────────────────────────────────────────────────────────
+# target_version / pinned_versions / validation_surface — nonfiction
+# (papers add citation_check + stats_check surfaces; literary omits this
+#  whole region)
+# ─────────────────────────────────────────────────────────────────────────
+target_version:
+  # The version of the main subject the document assumes. The Technical
+  # Reviewer (Axis B) uses it with per-source drift rules in
+  # bible/sources/sources.md: a source covering a different version yields
+  # "version drift, not error" advisories, not REVISE loopbacks. Leave null
+  # when the subject is not version-pinned (timeless CS, general prose).
+  subject: null
+  version: null
+  released: null                 # YYYY-MM
+
+pinned_versions:
+  # Every tool/library version the document commits to. The Technical
+  # Reviewer (Axis A) enforces these via validation_surface below; tech_a-3
+  # in the rubric checks references against this map. Example:
+  #   python: "3.12"
+  #   kubectl: "1.29"
+  {}
+
+validation_surface:
+  # What parts have a MACHINE-checkable surface and how to check them. The
+  # Technical Reviewer loads a sub-check per surface listed. See
+  # references/validation-surface.md for the catalogue. The point is not to
+  # ban un-checkable content — it is to catch everything that COULD be
+  # checked automatically, so tech_a-2 has teeth.
+  #
+  # Shape per entry:
+  #   { surface: <id>, applies_to: [<globs>], runner: <command|tool>,
+  #     pins: {<version keys>} }
+  #
+  # Common surfaces: python_exec, js_node_exec, bash_exec, sql_dialect_check,
+  # yaml_schema_validate, json_schema_validate, linter, doc_cross_ref,
+  # proof_recheck, empty.
+  #
+  # scientific-paper adds two surfaces (list them here when the profile is
+  # scientific-paper):
+  #   - surface: citation_check   # each visible citation exists, says what it
+  #                               # is claimed to say, is not retracted; run
+  #                               # via Zotero/citecheck/arxiv MCP if present,
+  #                               # else verify against bible/sources/ and flag
+  #                               # the unverifiable. Feeds Axis C.
+  #   - surface: stats_check      # reported statistics recompute from the
+  #                               # named data artifact in bible/claims-map.yaml
+  surfaces: []
+
+# ─────────────────────────────────────────────────────────────────────────
+# tone — register and the calibration the prose agents check against
+# ─────────────────────────────────────────────────────────────────────────
+tone:
+  register: "you"                # you | we | impersonal
+  # you = direct address; we = inclusive; impersonal = reference/academic.
+  # scientific-paper is typically impersonal; corporate-guide often you/we.
+  formality: "neutral"           # casual | neutral | formal
+  humor_allowed: true            # profiles may narrow this; corporate-guide
+                                 # and scientific-paper usually false
+  profanity_allowed: false
+  calibration_passages: "see bible/style-guide.md § Calibration"
+  # The human-approved passages that fix the target voice. The Humanizer and
+  # Critic calibrate against these and against bible/voice-profile.md. Keep
+  # the passages in the style guide; this is only the pointer.
+
+# ─────────────────────────────────────────────────────────────────────────
+# structure — how the document is divided
+# ─────────────────────────────────────────────────────────────────────────
+structure:
+  type: "linear"                 # linear | modular | reference | hybrid
+  # Informational; the profile's Sequence (linear/modular/imrad) is the
+  # authority on digests and forward-refs. Keep them consistent.
+  unit_length_target_words: 3500
+  unit_length_min: 2500
+  unit_length_max: 5000
+  exercises: "none"              # none | per_section | per_unit
+  # product-docs and scientific-paper: none. corporate-guide: optional
+  # "practice" with internal cases. book-technical: as the subtype wants.
+
+# ─────────────────────────────────────────────────────────────────────────
+# conventions — the formatting the document commits to
+# ─────────────────────────────────────────────────────────────────────────
+conventions:
+  code_language: "python"        # primary code language, or null for prose-only
+  style_guide: "PEP 8 + black"   # code style, or the prose style manual
+  heading_case: "sentence"       # sentence | title
+  callout_types: ["Note", "Warning", "Tip"]
+  # The callout vocabulary the document uses. corporate-guide uses
+  # Note / Template / Checklist (NOT "Recipe"). Keep this list closed so the
+  # Editor can flag off-list callouts.
+  dash_style: "em-dash, no spaces"
+  number_rule: "words < 10, digits >= 10 (except in code)"
+  date_format: "YYYY-MM-DD"
+
+# ─────────────────────────────────────────────────────────────────────────
+# pipeline — how Phase 3 runs for this project
+# ─────────────────────────────────────────────────────────────────────────
+pipeline:
+  mode: "fast"                   # fast | full — NONFICTION only.
+  # fast (default): Writer → Technical Reviewer → Editor → Humanizer →
+  #   Continuity Guardian (Mode A) → Critic → Human.
+  # full: adds Reader-POV between Humanizer and CG Mode A.
+  # book-literary IGNORES this key — it has a single flow (Humanizer and
+  # Reader-POV are load-bearing per unit).
+
+  retry_cap: 2                   # fast: 2 · full: 3 · literary: 3
+  # Total loopbacks a unit may take before the cap-hit escalation packet
+  # (references/loopback-handoff.md). Reviewer→Writer, Critic→any,
+  # adversarial-confirmed REVISEs, and human rejections share this one budget.
+
+  adversarial_verify: "off"      # off | gate_critical | every_unit | every_N
+  # Runs AFTER a Critic PASS, before human review. Three skeptics blind to the
+  # Critic's verdict try to refute the unit. A finding confirmed by >=2 becomes
+  # a REVISE (counts against retry_cap); single hits ride into the human packet.
+  # `every_N: 3` is recommended for long projects. See
+  # references/adversarial-verify.md.
+  # adversarial_verify_n: 3      # uncomment and set when mode is every_N
+
+  reader_panel: 1                # how many Reader-POV personas simulate per run
+  # 1 by default. The profile names the persona(s); set higher only when a
+  # profile lists more than one relevant reader.
+
+  chapter_digest:
+    enabled: true                # sequential profiles only; product-docs sets
+                                 # false (articles are standalone).
+    target_words: 400
+  archive_drafts:
+    enabled: true                # move drafts/unit-NN/ → drafts/_archive/ after
+                                 # approval; see references/archiving.md
+  coverage_audit:
+    enabled: true                # Phase 4 orphan-terms scan for KG profiles
+                                 # (book-technical, scientific-paper). Disable
+                                 # for profiles without load-bearing KG.
+  polish_pass:
+    enabled: true                # Phase 4, fast mode only: batch Reader-POV +
+                                 # Humanizer over 3-4 approved units. Ignored in
+                                 # full and literary. See references/pipeline.md.
+
+# ─────────────────────────────────────────────────────────────────────────
+# models — roles map to TIERS, never to model IDs
+# ─────────────────────────────────────────────────────────────────────────
+models:
+  # A role names a tier; a tier resolves to `inherit` (this session's model)
+  # or an explicit model ID. Put an explicit ID on a TIER ONLY when the human
+  # wants cost control (e.g. a cheaper model on `audit` once the audit roles
+  # prove they don't need the heavyweight one). NEVER write a model ID under a
+  # role, in a reference, or in an agent file — the tier is the single place
+  # an ID may live. See references/pipeline.md § Model tiers.
+  tiers:
+    creative: inherit
+    audit: inherit
+  roles:
+    writer: creative
+    technical_reviewer: audit
+    editor: audit
+    humanizer: audit             # book-literary sets this to `creative` —
+                                 # voice is the product in fiction.
+    reader_pov: audit
+    critic: creative
+    proofreader: audit
+    continuity_guardian: audit
+    default: audit               # fallback for any role not listed
+                                 # (e.g. adversarial skeptics)
+
+# ─────────────────────────────────────────────────────────────────────────
+schema_version: "3.0"            # phase detection keys on this; do not edit

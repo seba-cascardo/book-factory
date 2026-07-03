@@ -1,0 +1,63 @@
+# project-status.yaml — machine-readable state of the project
+#
+# CONTRACT: this is the authoritative source of truth for phase detection.
+# The skill reads it on every invocation to resume where it left off. Every
+# step that advances state updates the relevant field here; the human reads it
+# to see progress at a glance.
+#
+# Phase detection keys on `schema_version`. If it is not "3.0", the skill tells
+# the human this project predates the current skill and offers to re-scaffold —
+# there is no automatic migration.
+
+schema_version: "3.0"
+
+phase: "setup"
+# Ordered phases:
+#   init             — folder scaffolded, bible not started
+#   setup            — bible being assembled (incl. voice-profile)
+#   knowledge-graph  — concept/terminology map being built (per profile)
+#   outlining        — outline/units.yaml being produced
+#   drafting         — per-unit pipeline running
+#   assembly         — all units approved, Phase 4 full-document review
+#   build            — Phase 5 export
+#   complete         — signed off
+
+current_unit: null               # e.g. "unit-03" — the unit in flight, or null
+
+units:
+  # One entry per unit, keyed by unit id. Added as the outline is built;
+  # updated as the pipeline advances. Copy this shape:
+  #
+  # unit-01:
+  #   status: drafted              # drafted | reviewed | approved | archived
+  #     # drafted  — draft exists, not yet through the Critic gate
+  #     # reviewed — Critic ran; awaiting human (verdict in scorecard_last_verdict)
+  #     # approved — human signed off; landed in final/unit-01.md
+  #     # archived — post-approval steps done; drafts moved to _archive/
+  #   digest_written: false        # sequential profiles only; always false for
+  #                                # product-docs (no digests)
+  #   scorecard_last_verdict: null # PASS | REVISE | REWORK | ESCALATE | null
+  #                                # mirrors drafts/unit-01/scorecard.yaml's
+  #                                # computed verdict at the last Critic run
+  {}
+
+retries:
+  # Per-unit loopback counter. Cap enforced by pipeline.retry_cap in meta.yaml.
+  # ONE shared budget per unit across Technical-Reviewer→Writer, Critic→any,
+  # adversarial-confirmed REVISEs, and human rejections. On cap hit the skill
+  # emits the escalation packet (references/loopback-handoff.md); once the
+  # human picks a path, that unit's counter resets to 0 (fresh attempt).
+  by_unit: {}                     # e.g. { "unit-03": 2 }
+  cap_hits: []                    # log of cap-hit escalation events, appended
+                                  # one per hit: [unit-NN, ISO-8601 timestamp]
+
+runs: []
+  # The orchestrator (never the agents) appends ONE line per agent run:
+  #   - [unit-NN, writer, creative, 1, 2026-01-01T00:00Z]
+  #     #  unit    agent   tier    cycle  ISO-8601 timestamp
+  # That is the entire contract. Token accounting is DELIBERATELY DROPPED:
+  # per-call token rows were specified in the past and never reliably
+  # populated — a log that looks like observability but isn't is worse than a
+  # minimal one that actually gets written. This log feeds the retry summary
+  # in the human packet and lets the human spot roles that loop repeatedly or
+  # aren't earning their tier.
