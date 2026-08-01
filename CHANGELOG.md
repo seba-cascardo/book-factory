@@ -95,6 +95,34 @@ finally forced, they found six blockers.
 `manuscript-gate` and `blocked-on-manuscript-gate`. Saying a book is blocked is
 the useful thing to do.
 
+### Unresolved is not unknowable — the verification plan
+
+When the pipeline cannot establish a claim and reality could, the deliverable is
+the plan to go and ask: the check written down in a form somebody can execute,
+with an empty slot for the answer. Not a softened claim, and not the claim
+asserted anyway because verifying it was inconvenient.
+
+Code is the obvious case and not the only one. Every `deferred` item an auditor
+emits now declares what would settle it, and the five values naming something
+reality can supply — `runner`, `live-system`, `measurement`, `person`,
+`document-of-record` — become numbered plan entries.
+`scripts/manuscript_gate.py` writes the skeleton, grouped by need and led by the
+checks that close open criticals. `human-decision` is the exception: no
+observation settles a choice, so it goes to the human packet instead.
+
+This does not apply to every book — a novel has no reality to check against. The
+trigger is narrow: *the pipeline could not settle it, and a defined observation
+would.*
+
+The evidence for bothering: the first time eight checks from one such book were
+run against a live system, the results **contradicted what the reviewer had
+concluded on paper**. The reasoning had been careful; it was still wrong. And the
+failure mode is quiet — a malformed query returns zero rows rather than an error,
+which reads exactly like a correct query over empty data.
+
+`references/test-plan.md` → `references/verification-plan.md`, broadened past
+executable code; template likewise.
+
 ### Omission blindness — the finding that transfers furthest
 
 Review agents catch contradictions and are blind to **omitted preconditions**.
@@ -172,8 +200,8 @@ own quota, and what was cut is always reported.
   is cheaper than a fix pass acting on a wrong finding. With nothing marked
   `gate_critical`, this costs nothing.
 - `validation_surface`: `reviewer-only` is still legal but no longer silent. An
-  executable surface with no real runner needs a waiver **and** a test plan
-  (`references/test-plan.md`), or MG-6 raises a `major`.
+  executable surface with no real runner needs a waiver **and** a verification
+  plan (`references/verification-plan.md`), or MG-6 raises a `major`.
 - Build preflight (`lint_render`, `sync_manuscript --check`,
   `validate_claim_index`) now runs for **every** profile, not just `product-docs`.
 

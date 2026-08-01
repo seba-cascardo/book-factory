@@ -50,7 +50,7 @@ that is a real constraint — but it is no longer a **silent** one. At the
 manuscript gate, an executable surface with no real runner must carry:
 
 - a `waivers` entry in `project-status.yaml` (who waived it, why, and the debt), **and**
-- a test plan as a first-class deliverable — see `references/test-plan.md`.
+- a verification plan as a first-class deliverable — see `references/verification-plan.md`.
 
 Missing either, MG-6 raises a `major` and the book cannot reach `complete`. The
 point is not to force a sandbox into existence. It is that shipping unverified
@@ -190,7 +190,7 @@ pattern-based lint pass, or an external linter.
 **Needs**: a reachable Qlik environment to reload against, or
 `runner: "internal:qlik_load_script_lint"` for a pattern-based pass.
 `executable: true` either way — a load script is code, and a lint is not a
-reload. Without a real environment this surface owes a test plan.
+reload. Without a real environment this surface owes a verification plan.
 
 **Sub-prompt**:
 
@@ -370,7 +370,7 @@ the declaration is per project, not per profile. Walk through:
 1. **Does the document contain executable code?** Declare the relevant
    `*_exec` surface, with `executable: true`. Pin versions. If no runner is
    available in this environment, say so now rather than at the gate: the
-   waiver and the test plan are part of the project's scope, not an
+   waiver and the verification plan are part of the project's scope, not an
    afterthought.
 2. **Does it contain declarative configs?** (YAML, JSON, Terraform,
    Kubernetes manifests.) Declare a `*_schema_validate` surface + linter.

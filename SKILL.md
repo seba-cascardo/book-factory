@@ -325,7 +325,7 @@ book this skill never scaffolded. See `scripts/README.md`.
 | `validate_claim_index.py` | `PROPAGATE` — what else says the same thing |
 | `bootstrap_probes.py` | Seeds concept probes from the KG, glossary, or frequency |
 | `extract_rule_candidates.py` | MG-2 rule ↔ instance pairing |
-| `extract_code_corpus.py` | MG-6 test-plan raw material |
+| `extract_code_corpus.py` | MG-6 verification-plan raw material |
 | `lint_style.py` | The Proofreader's mechanical half |
 | `sync_manuscript.py` | `final/` → `manuscript.md`, with `--check` |
 
@@ -394,7 +394,7 @@ project/
 | After approval | `references/chapter-digest.md` + `references/archiving.md` |
 | Last unit archived | `references/manuscript-gate.md` — **not optional** |
 | Claim propagation, "what else says this?" | `references/claim-index.md` |
-| Executable code with no runner | `references/test-plan.md` |
+| Executable code with no runner | `references/verification-plan.md` |
 | Phase 5 | `references/build-export.md` |
 
 Templates live in `templates/` — the scaffold copies from these. The

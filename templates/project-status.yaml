@@ -87,7 +87,7 @@ waivers: []
   #   waived_by: human
   #   reason: "no sandbox for this product in this environment"
   #   date: "2026-08-01"
-  #   debt: "reviews/test-plan/TEST-PLAN.md — 56 tests, 0 run"
+  #   debt: "reviews/verification-plan/PLAN.md — 56 tests, 0 run"
   #   # `debt` is the part that keeps this honest: it says what is owed, and it
   #   # appears verbatim in the done report.
 

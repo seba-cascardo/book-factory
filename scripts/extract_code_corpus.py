@@ -4,8 +4,8 @@
 
 Two uses:
 
-  1. **Test-plan seeding (MG-6).** When a validation surface has no real runner,
-     the skill owes a test plan as a first-class deliverable. This produces its
+  1. **Verification-plan seeding (MG-6).** When a validation surface has no real runner,
+     the skill owes a verification plan as a first-class deliverable. This produces its
      raw material: every snippet, with its location, its caption and its
      surrounding heading, grouped so a human can see the shape of what was never
      executed.
@@ -26,7 +26,7 @@ default and needs nothing.
 
 Usage
   python scripts/extract_code_corpus.py                 # summary table
-  python scripts/extract_code_corpus.py --out reviews/test-plan
+  python scripts/extract_code_corpus.py --out reviews/verification-plan
 """
 
 from __future__ import annotations

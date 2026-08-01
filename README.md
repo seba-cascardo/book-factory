@@ -84,7 +84,7 @@ references/
 ├── manuscript-gate.md         # Phase 4.5 — the book-level gate and its loop
 ├── claim-index.md             # propagation: what else says the same thing
 ├── rubric.md                  # scorecard families + computed verdict
-├── adversarial-verify.md, test-plan.md, build-export.md, ...
+├── adversarial-verify.md, verification-plan.md, build-export.md, ...
 └── agents/                    # one contract per agent
 scripts/                       # deterministic checks — no model runs these
 templates/                     # bible artifacts the scaffold copies into a project

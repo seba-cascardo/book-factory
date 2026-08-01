@@ -117,7 +117,8 @@ Questions the auditors could not resolve from the available sources. These are
 NOT findings, and turning one into a finding is how a review invents verdicts.
 
 Each needs: what would settle it (a runner, a source the project lacks, a human
-decision). Anything needing a runner belongs in the MG-6 test plan.
+decision). Anything reality could answer becomes a verification-plan entry
+(references/verification-plan.md); only `human-decision` items stop here.
 -->
 
 | Question | Sites | Needs | Where it goes |

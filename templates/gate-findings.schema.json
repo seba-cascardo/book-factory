@@ -44,18 +44,39 @@
       "items": { "$ref": "#/$defs/adjudication" }
     },
     "deferred": {
-      "description": "Questions the auditor could not settle from the available sources. These are NOT findings. Sending an unresolved question to a finding is how a review invents verdicts.",
+      "description": "Questions the auditor could not settle from the available sources. These are NOT findings — turning an unresolved question into a finding is how a review invents verdicts. They are also not dead ends: every deferred item whose `needs` names something reality could answer flows into the verification plan (references/verification-plan.md), which is a first-class deliverable rather than a note.",
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["question", "why_unresolved"],
+        "required": ["question", "why_unresolved", "needs"],
         "properties": {
-          "question": { "type": "string" },
+          "question": {
+            "description": "Phrase it so that a specific observation would answer it. 'Is the wildcard behavior right?' cannot be checked; 'does an ADMIN with * see values absent from the security table?' can.",
+            "type": "string"
+          },
           "why_unresolved": { "type": "string" },
           "sites": { "type": "array", "items": { "type": "string" } },
           "needs": {
-            "description": "What would settle it: a live runner, a source the project does not have, a decision from the human.",
-            "enum": ["runner", "source", "human-decision"]
+            "description": "What would settle it. The first five are things REALITY can answer, and each becomes a verification-plan entry. `human-decision` is the exception: no observation settles it, it is a choice, and it goes to the human packet instead.",
+            "enum": [
+              "runner",
+              "live-system",
+              "measurement",
+              "person",
+              "document-of-record",
+              "human-decision"
+            ]
+          },
+          "how_to_check": {
+            "description": "The concrete observation that would settle it: the snippet to run, the screen to open, the number to count, the question to ask and who to ask. Vague here means the plan entry is unusable and nobody runs it.",
+            "type": "string"
+          },
+          "expected": {
+            "description": "What the book's current claim predicts you will observe. Written BEFORE checking — otherwise the result gets read as confirmation.",
+            "type": "string"
+          },
+          "defect_if": {
+            "description": "The specific observation that would mean the book is wrong, and which passage would then be at fault."
           }
         }
       }

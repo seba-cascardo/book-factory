@@ -133,6 +133,16 @@ Hard rules:
 - Anything you cannot settle from the available sources goes in `deferred`, not
   into a finding. Do not invent a verdict — an unfounded one does real damage,
   because someone will act on it.
+
+  **But `deferred` is not a wastebasket.** Every item becomes an entry in the
+  verification plan, which is a real deliverable somebody executes. So write each
+  one so it can be: phrase the question so a **specific observation** answers it
+  ("does an ADMIN with `*` see values absent from the security table?", not "is
+  the wildcard behavior right?"), set `needs` to what would settle it, and fill
+  `how_to_check`, `expected` and `defect_if`. Write `expected` and `defect_if`
+  *before* anyone checks — otherwise the result gets read as confirmation.
+
+  Unresolved here is usually not unknowable, only unknown in this session.
 - `source` lens: every finding needs `authority` with path, line and a verbatim
   quote. Between `CONTRADICTED` and `NOT_COVERED`, choose `NOT_COVERED`.
 

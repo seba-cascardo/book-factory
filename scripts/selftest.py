@@ -235,6 +235,45 @@ def test_manuscript_gate(tmp: Path) -> None:
     check("gate surfaces the fixture's criticals", n_critical >= 1, mg5)
 
 
+def test_verification_plan(tmp: Path) -> None:
+    print("\nmanuscript_gate — unsettled questions become a plan, not a dead end")
+    work = tmp / "plan"
+    shutil.copytree(FIXTURES, work)
+    fdir = work / "reviews" / "manuscript-gate-2026-01-01" / "round-1" / "findings"
+    fdir.mkdir(parents=True)
+    (fdir / "demo.json").write_text(json.dumps({
+        "check": "MG-1", "lens": "source", "subject": "demo", "findings": [],
+        "deferred": [
+            {"question": "Does the live system behave as unit-01 claims?",
+             "why_unresolved": "no access here", "needs": "runner",
+             "sites": ["final/unit-01.md:10"],
+             "how_to_check": "run the snippet", "expected": "x", "defect_if": "y"},
+            {"question": "Does the approval flow really take three days?",
+             "why_unresolved": "internal process claim", "needs": "person",
+             "sites": ["final/unit-02.md:20"]},
+            {"question": "Recommend pattern A or B?",
+             "why_unresolved": "editorial choice", "needs": "human-decision",
+             "sites": ["final/unit-03.md:30"]},
+        ]}), encoding="utf-8")
+
+    code, log = run("manuscript_gate.py", [
+        "--root", str(work), "--units", "final/unit-*.md",
+        "--date", "2026-01-01", "--round", "1", "--verdict-only"])
+    plan = work / "reviews" / "verification-plan" / "PLAN.md"
+    check("plan is generated from deferred items", plan.exists(), log.strip()[-300:])
+    if not plan.exists():
+        return
+    text = plan.read_text(encoding="utf-8")
+    check("a runner question becomes an entry", "live system behave" in text)
+    check("a NON-code question becomes an entry too", "approval flow" in text,
+          "code is the obvious case, not the only one — a claim a person could "
+          "confirm is just as checkable and just as unverified")
+    check("a human decision stays OUT of the plan", "pattern A or B" not in text,
+          "no observation settles a choice; it belongs in the human packet")
+    check("missing fields are marked TODO, not dropped", "**TODO**" in text,
+          "an entry nobody can execute is an entry nobody runs — say so")
+
+
 def test_sync_manuscript(tmp: Path) -> None:
     print("\nsync_manuscript — deterministic and idempotent")
     work = tmp / "sync"
@@ -263,6 +302,7 @@ def main() -> int:
         test_rule_extraction(tmp)
         test_propagation(tmp)
         test_manuscript_gate(tmp)
+        test_verification_plan(tmp)
         test_sync_manuscript(tmp)
 
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")

@@ -111,14 +111,36 @@ Any `critical` here blocks. The class is cheap, mechanical, and completely
 invisible to a prose reviewer — a paragraph with a `---` under it reads perfectly
 in the source and prints as an H2.
 
-### MG-6 — Executable code
+### MG-6 — Checkable against reality
 
-For every declared validation surface whose content is executable: either the
-runner ran and its output is on record, or there is a waiver and a test plan.
-See `references/validation-surface.md` and `references/test-plan.md`. Reasoning
-about code against documentation is not verification — the first time eight tests
-from one such book were run on a real engine, the results contradicted what the
-reviewer had concluded on paper.
+Two things, and the second is the general one.
+
+**Executable code.** For every declared validation surface whose content is
+executable: either the runner ran and its output is on record, or there is a
+waiver *and* a verification plan. Reasoning about code against documentation is
+not verification — the first time eight checks from one such book were run on a
+real engine, the results contradicted what the reviewer had concluded on paper.
+
+**Everything else the pipeline could not settle.** Code is the obvious case, not
+the only one. Across MG-1 to MG-4 the auditors emit `deferred` items: questions
+they could not answer from what they had. Each one declares what *would* answer
+it, and the five values that name something reality can supply —
+`runner`, `live-system`, `measurement`, `person`, `document-of-record` — become
+entries in the verification plan. `human-decision` is the exception: no
+observation settles a choice, so it goes to the human packet instead.
+
+`scripts/manuscript_gate.py` writes the skeleton automatically from those items.
+See `references/verification-plan.md` and `references/validation-surface.md`.
+
+The principle is worth stating plainly, because it is easy to let slide:
+**unresolved here is usually not unknowable, just unknown in this session.** A
+claim the pipeline could not establish has three honest endings — verify it,
+soften it, or write down the check that would settle it and record the debt. What
+it must not do is get asserted anyway because verifying it was inconvenient.
+
+Not every project has a reality to check against. A novel does not; a
+philosophical essay's claims are not that kind of claim. The trigger is narrow:
+*the pipeline could not settle it, and a defined observation would.*
 
 ---
 
@@ -486,6 +508,6 @@ agents disappeared for three months.
 - `references/agents/concept-auditor.md` — MG-1
 - `references/agents/rule-auditor.md` — MG-2, MG-3
 - `references/agents/reader-pov.md` § Whole-book mode — MG-4
-- `references/validation-surface.md` and `references/test-plan.md` — MG-6
+- `references/validation-surface.md` and `references/verification-plan.md` — MG-6
 - `references/adversarial-verify.md` § Manuscript-gate mode
 - `references/pipeline.md` — Phase 3, and the polish pass this does not replace

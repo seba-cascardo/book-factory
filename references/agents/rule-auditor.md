@@ -161,6 +161,13 @@ Hard rules, same as every auditor here:
   to damage correct text.
 - `searched_whole_chapter` and `read_surrounding_section` are claims you are
   making. Do not make them falsely.
+- What you cannot settle goes in `deferred`, never into a finding — **and
+  `deferred` is not a wastebasket.** Each item becomes an entry in a verification
+  plan somebody executes, so write it so it can be: a question a specific
+  observation answers, `needs` set to what would settle it, and `how_to_check`,
+  `expected` and `defect_if` filled. The last two go in *before* anyone checks,
+  or the result gets read as confirmation. Unresolved here is usually not
+  unknowable, only unknown in this session.
 
 Your final text is **one line**: counts by `relation`, plus `instances_judged`.
 
