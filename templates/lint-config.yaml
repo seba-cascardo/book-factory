@@ -1,0 +1,54 @@
+# bible/lint-config.yaml — configuration for scripts/lint_style.py
+#
+# Optional. With no config the script still runs: spelling variants and
+# whitespace rules need nothing, and the casing watchlist is derived from
+# multi-word terms in `bible/glossary.md`.
+#
+# Write this file when the project has terminology decisions worth enforcing
+# mechanically. A pin here is checked on every unit forever, which is a better
+# home for it than a line in the style guide that a reviewer has to remember.
+
+language_variant: "en-US"   # defaults to meta.yaml → conventions.language_variant
+                            # Drives the spelling-variant table: en-US flags
+                            # en-GB spellings, en-GB flags the reverse.
+
+# ── Pinned terminology ───────────────────────────────────────────────────
+# A violation is an objective error, not a judgement call.
+pins: []
+  # - pattern: "\\basset panel\\b"      # regex, case-sensitive as written
+  #   prefer: "assets panel"
+  #   why: "style pin"
+  # - pattern: "(?<!`)\\bAGGR\\(\\)"    # the (?<!`) keeps code spans out
+  #   prefer: "Aggr()"
+  #   why: "pinned casing (prose only)"
+
+# ── Forbidden terms ──────────────────────────────────────────────────────
+# Sugar for a pin: written as a plain term, matched with word boundaries.
+forbidden: []
+  # - term: "junction table"
+  #   prefer: "link table / bridge table"
+
+# ── Casing watchlist ─────────────────────────────────────────────────────
+# Multi-word terms whose capitalization must stay stable. The script reports the
+# MINORITY variant, not every occurrence, and stays quiet on an even split
+# (>40% of the majority) because that usually means both are legitimate in
+# different positions.
+#
+# Leave empty to derive from bible/glossary.md.
+casing_watch: []
+  # - set analysis
+  # - link table
+
+# ── Exemptions ───────────────────────────────────────────────────────────
+# Lines matching any of these are skipped entirely. Use sparingly — an
+# exemption is a rule you have decided not to enforce, and it should be as
+# narrow as you can make it.
+allow: []
+  # - "^> quoted from the vendor docs"
+
+sentence_case_headings: true   # flag Title Case headings (conservative: needs
+                               # 3+ capitalized words in a row)
+thousands_separator: true      # flag 4+ digit numbers with no separator.
+                               # Years 1900-2100 and line/page references are
+                               # already excluded — on the calibration run, 111
+                               # of 111 first-pass hits were "2024"/"2025".

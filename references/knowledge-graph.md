@@ -190,6 +190,24 @@ Present the graph to the human. Explicit sign-off on:
 Record the sign-off in `project-status.yaml` under
 `knowledge_graph.last_verified`.
 
+## Downstream: the graph seeds the concept audit
+
+At the Phase 4.5 manuscript gate, `scripts/bootstrap_probes.py` derives one
+concept probe per graph node, and those probes are what gather every passage in
+the book that makes a claim about a concept (`references/claim-index.md`). A
+project with a good graph gets MG-1 nearly for free.
+
+Two consequences worth knowing while you build it:
+
+- **A node's `name` becomes a search pattern.** A descriptive label ("STORE —
+  writing a QVD") makes a bad probe; the surface term readers actually see makes
+  a good one. Where the two differ, add the surface forms under `aliases`.
+- **The graph is not the ceiling.** The concept that actually contradicts itself
+  is often finer-grained than a node — it lives in one sense of a term the node
+  covers. Those get hand-written probes in `bible/concept-probes-tuned.yaml`,
+  which may introduce ids with no graph node at all. That is expected, not a
+  modelling error; do not split the graph to chase it.
+
 ---
 
 ## What to avoid

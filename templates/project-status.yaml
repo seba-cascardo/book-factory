@@ -19,27 +19,90 @@ phase: "setup"
 #   outlining        — outline/units.yaml being produced
 #   drafting         — per-unit pipeline running
 #   assembly         — all units approved, Phase 4 full-document review
+#   manuscript-gate  — Phase 4.5 running; set AUTOMATICALLY when the last unit
+#                      is archived. The orchestrator never reports a book done
+#                      from `assembly` — see references/manuscript-gate.md.
+#   blocked-on-manuscript-gate
+#                    — the gate hit max_rounds without converging, or carries an
+#                      unresolved critical. An escalation packet exists and the
+#                      human has to decide. This is a legitimate resting state;
+#                      what is not legitimate is calling it `complete`.
 #   build            — Phase 5 export
-#   complete         — signed off
+#   complete         — signed off. See "Definition of done" below: this word has
+#                      preconditions now, and the orchestrator checks them.
 
 current_unit: null               # e.g. "unit-03" — the unit in flight, or null
+
+# ── Definition of done ───────────────────────────────────────────────────
+# `phase: complete` requires ALL of:
+#   1. every unit `archived`
+#   2. manuscript_gate.verdict == PASS *and* converged (rounds_without_new >=
+#      pipeline.manuscript_gate.rounds_without_new_to_close). One clean round is
+#      not evidence.
+#   3. no unresolved CHANGED in bible/claim-index.yaml
+#   4. every build target verified (references/build-export.md)
+#   5. a done report listing open `waivers` and unresolved minors, accepted by
+#      the human
+# Previously this word was defined by a two-word comment and nothing ever wrote
+# it. A finished state nobody can check is a finished state that gets asserted.
 
 units:
   # One entry per unit, keyed by unit id. Added as the outline is built;
   # updated as the pipeline advances. Copy this shape:
   #
   # unit-01:
-  #   status: drafted              # drafted | reviewed | approved | archived
+  #   status: drafted              # drafted | reviewed | approved | archived | on_hold
   #     # drafted  — draft exists, not yet through the Critic gate
   #     # reviewed — Critic ran; awaiting human (verdict in scorecard_last_verdict)
   #     # approved — human signed off; landed in final/unit-01.md
   #     # archived — post-approval steps done; drafts moved to _archive/
+  #     # on_hold  — parked at the human's request after a cap-hit escalation
+  #     #            (references/loopback-handoff.md); the rest of the project
+  #     #            continues. A held unit blocks the manuscript gate.
   #   digest_written: false        # sequential profiles only; always false for
   #                                # product-docs (no digests)
   #   scorecard_last_verdict: null # PASS | REVISE | REWORK | ESCALATE | null
   #                                # mirrors drafts/unit-01/scorecard.yaml's
   #                                # computed verdict at the last Critic run
+  #   archived_on: null            # ISO-8601, set by references/archiving.md
   {}
+
+knowledge_graph:
+  last_verified: null             # ISO-8601. Bumped at KG sign-off, by outlining
+                                  # when it writes `introduced_in` back, and on
+                                  # every revision during drafting.
+                                  # (references/knowledge-graph.md)
+
+# ── Waivers — the anti-silent-configuration mechanism ────────────────────
+# Any check turned off leaves a trace here. This is what converts a quiet
+# config value into visible debt: a project once carried three deferred agents
+# in config for three months, reached "publish-ready", and nobody noticed they
+# had never run. They found six blockers when finally forced.
+#
+# A waived check is a decision. An unwaived one that is simply off is an
+# accident, and the gate treats it as a defect.
+waivers: []
+  # - check: validation_surface.qlik_load_script   # or polish_pass,
+  #                                                # manuscript_gate.MG-4, ...
+  #   waived_by: human
+  #   reason: "no sandbox for this product in this environment"
+  #   date: "2026-08-01"
+  #   debt: "reviews/test-plan/TEST-PLAN.md — 56 tests, 0 run"
+  #   # `debt` is the part that keeps this honest: it says what is owed, and it
+  #   # appears verbatim in the done report.
+
+manuscript_gate:
+  # Phase 4.5 state. Persisted so a session that is cut off resumes at the round
+  # it was on instead of starting over. Written by scripts/manuscript_gate.py.
+  round: 0
+  verdict: null                   # BLOCKED | NEEDS-REVISION | PASS | null
+  open_critical: 0
+  open_major: 0
+  open_minor: 0
+  rounds_without_new: 0           # consecutive rounds with no new blocking finding
+  converged: false
+  run_dir: null                   # reviews/manuscript-gate-<YYYY-MM-DD>/
+  history: []                     # one entry per round
 
 retries:
   # Per-unit loopback counter. Cap enforced by pipeline.retry_cap in meta.yaml.

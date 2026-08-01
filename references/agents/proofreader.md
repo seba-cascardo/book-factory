@@ -90,12 +90,29 @@ you out of scope.
 
 ### 5. Formatting
 
-- Heading levels match the style guide (no jumps from H1 to H3).
+Run the mechanical half first, then judge what is left:
+
+```bash
+python scripts/lint_render.py --units "final/unit-NN.md" --fail-on never
+python scripts/lint_style.py --units "final/unit-NN.md"
+```
+
+`lint_render.py` owns the rendering hazards — accidental Setext headings,
+unbalanced fences and HTML comments, ragged tables, heading-level jumps, missing
+language tags, pipeline handoff comments that leaked into a shipped file.
+`lint_style.py` owns spelling variants, pinned terminology and whitespace. Both
+are better at this than you are: they do not hallucinate a violation and they are
+not tired by unit 14. Triage their output; do not redo their work.
+
+A `critical` from `lint_render` is not a judgement call. A paragraph with a `---`
+directly under it prints as a heading, and that has shipped in a finished book
+past four technical audits, because it reads perfectly in the source.
+
+Then judge what the scripts cannot:
+
 - Bold/italic/code spans used consistently for the same kind of thing:
   inline code for commands, italics for emphasis, bold sparingly.
-- Code blocks have language fences (```python, ```bash).
-- Lists: consistent bullet style, consistent terminal punctuation (every
-  item ends in a period, or none do).
+- Lists: consistent terminal punctuation (every item ends in a period, or none do).
 - Block quotes and callouts follow the profile's callout set and the style
   guide's format for them.
 

@@ -13,6 +13,50 @@ with (a mechanical check that can verify that content). The project's
 the sub-prompt for each declared surface from this file and runs it over
 the draft.
 
+## Surface shape, and the `executable` flag
+
+```yaml
+validation_surface:
+  surfaces:
+    - surface: python_exec
+      applies_to: ["drafts/**/*.md", "final/**/*.md"]
+      runner: "docker run --rm -v $PWD:/w python:3.12 python /w/snippet.py"
+      executable: true              # declare it — see below
+      pins: { python: "3.12" }
+```
+
+`executable` says whether this surface's content is code that a machine could
+actually run. **Declare it explicitly.** MG-6 in the manuscript gate infers it
+from the surface id when it is missing, and reports "cannot tell" rather than
+guessing "no" — because guessing "no" turns undeclared debt into a silent pass,
+and that is how a book shipped with 3,200 lines of code verified only by
+reasoning.
+
+## Reasoning is not verification
+
+A surface whose `runner` is `reviewer-only` or `internal:*` has not been
+verified. It has been *reasoned about*. Both are legitimate; they are not the
+same, and the difference is measurable: the first time eight tests from one such
+book were run on a real engine, the results contradicted what the reviewer had
+concluded on paper.
+
+The failure mode is worse than it sounds, because broken code does not always
+fail loudly. An expression that silently returns zero rows looks exactly like a
+correct query over an empty result. A reviewer reasoning from documentation
+cannot see that. An engine can.
+
+So `reviewer-only` remains a legal choice — sometimes there is no sandbox and
+that is a real constraint — but it is no longer a **silent** one. At the
+manuscript gate, an executable surface with no real runner must carry:
+
+- a `waivers` entry in `project-status.yaml` (who waived it, why, and the debt), **and**
+- a test plan as a first-class deliverable — see `references/test-plan.md`.
+
+Missing either, MG-6 raises a `major` and the book cannot reach `complete`. The
+point is not to force a sandbox into existence. It is that shipping unverified
+code should be a decision somebody made, visible in the done report, rather than
+a configuration value nobody looked at.
+
 Findings integrate into `tech-review.md` under Axis A (mechanical
 correctness), Axis B (grounding / mental models), or Axis C (reference
 integrity, scientific-paper profile) — each surface below says where its
@@ -65,6 +109,9 @@ errors, flag Axis A.
 ### `js_node_exec`
 
 Same shape as `python_exec`, for Node.js. Pin the node version.
+
+**Needs**: `runner` pointing at a sandboxed Node of the pinned version, plus a
+lockfile if the snippets import anything. `executable: true`.
 
 ### `bash_exec`
 
@@ -140,6 +187,11 @@ pattern-based lint pass, or an external linter.
 **Checks**: Qlik Sense load scripts — directives (`LOAD`, `FROM`,
 `STORE`, `LET`, `SET`), field naming, `AutoGenerate` blocks.
 
+**Needs**: a reachable Qlik environment to reload against, or
+`runner: "internal:qlik_load_script_lint"` for a pattern-based pass.
+`executable: true` either way — a load script is code, and a lint is not a
+reload. Without a real environment this surface owes a test plan.
+
 **Sub-prompt**:
 
 > You are checking Qlik Sense load scripts (the data-loading language,
@@ -162,6 +214,11 @@ pattern-based lint pass, or an external linter.
 **Checks**: Qlik frontend chart expressions — valid function names,
 balanced parens, aggregations not nested without inner `Aggr()`, valid
 field references.
+
+**Needs**: an app to evaluate the expressions in, or
+`runner: "internal:qlik_expression_lint"`. `executable: true`. This is the
+surface where reasoning fails most quietly: a malformed set expression returns
+zero rows rather than an error, which reads as a correct query over empty data.
 
 **Sub-prompt**:
 
@@ -194,6 +251,12 @@ require the Writer to provide a citation or remove it. Axis B.
 
 **Checks**: mathematical derivations — each step in a derivation
 follows from the previous by a named rule.
+
+**Needs**: a proof assistant (`runner: "lean --run"`, Coq, Isabelle) when the
+project formalizes its proofs — `executable: true`. Otherwise this is a
+**reasoning surface**: no runner, the Reviewer re-derives by hand.
+Declare `executable: false` in that case, so it is a stated choice rather than
+an unexamined default.
 
 **Sub-prompt**: For each derivation (sequence of `=` or `⟹` steps),
 verify the justification given for each step corresponds to a known
@@ -251,6 +314,11 @@ optional, but the skip must be explicit.
 recomputes and cross-checks by explicit arithmetic (or with
 `python_exec` when that surface is also declared).
 
+**Needs**: nothing, and that is the point — declare `executable: false`. It is a
+genuine reasoning surface, not a skipped one, and the flag is what tells the gate
+the difference. When the numbers come from an analysis script that ships with the
+project, declare `python_exec` alongside and let the script be the authority.
+
 **Applies to**: any unit reporting quantitative results — Results
 sections of papers, benchmark chapters, survey summaries.
 
@@ -288,6 +356,9 @@ philosophical essay on software engineering. Axis A auto-PASSes; Axis B
 runs against the grounding library only. The report carries an explicit
 "No validation surface" note.
 
+Declare it as `executable: false`, and mean it. `empty` on a project that ships
+code is not "no surface", it is an undeclared skip, and MG-6 treats it as one.
+
 ## How to choose surfaces for a project
 
 Surfaces are declared during Phase 1 setup, when conventions are decided
@@ -297,7 +368,10 @@ typically declares `citation_check` + `stats_check` + `proof_recheck` +
 the declaration is per project, not per profile. Walk through:
 
 1. **Does the document contain executable code?** Declare the relevant
-   `*_exec` surface. Pin versions.
+   `*_exec` surface, with `executable: true`. Pin versions. If no runner is
+   available in this environment, say so now rather than at the gate: the
+   waiver and the test plan are part of the project's scope, not an
+   afterthought.
 2. **Does it contain declarative configs?** (YAML, JSON, Terraform,
    Kubernetes manifests.) Declare a `*_schema_validate` surface + linter.
 3. **Does it contain a tool-specific DSL?** (SQL, Qlik expressions,

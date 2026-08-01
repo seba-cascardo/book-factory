@@ -46,6 +46,15 @@ operation.
 5. **Roles do not overlap.** Each agent owns a clean slice and flags outside
    its scope via HTML comments instead of fixing silently. If every agent
    fixes everything, the pipeline collapses into four identical rewrites.
+6. **The unit of analysis changes at the end.** Per-unit gates cannot see a
+   contradiction that spans two units — each reviewer sees one side and
+   approves it, correctly. Phase 4.5 re-audits the book as one document and
+   iterates until it converges. **No path leads from the last approved unit to
+   `complete` without it.**
+7. **Nothing is turned off silently.** Any check disabled leaves a `waivers`
+   entry in `project-status.yaml` naming who waived it, why, and what is owed.
+   A config value nobody looked at is how three agents once sat unrun for three
+   months while the project reported itself finished.
 
 ---
 
@@ -198,6 +207,8 @@ Load the agent's file fresh at the start of its turn, then the profile, then
 | Proofreader | `references/agents/proofreader.md` | same |
 | Continuity Guardian | `references/agents/continuity-guardian.md` | same |
 | Adversarial skeptics | `references/adversarial-verify.md` | same |
+| Concept Auditor (Phase 4.5) | `references/agents/concept-auditor.md` | same |
+| Rule Auditor (Phase 4.5) | `references/agents/rule-auditor.md` | — |
 
 ### Anti-mediocrity reads
 
@@ -239,6 +250,40 @@ hardcode IDs anywhere else.
    (`references/agents/continuity-guardian.md` § Singularity audit).
 6. Style consistency report; the human decides final revisions.
 
+Everything in Phase 4 is advisory. The gate is next, and it is not.
+
+## Phase 4.5: Manuscript gate
+
+Read `references/manuscript-gate.md`. **Fires automatically** when the last unit
+reaches `archived` — write `phase: manuscript-gate` and start Round 1. Do not
+report the book finished from Phase 4.
+
+Six checks over the whole book, not the unit:
+
+| | Question | Engine |
+|---|---|---|
+| MG-1 | Do all claims about one concept agree, across units? | dossiers + `concept-auditor` |
+| MG-2 | Does the book's code obey the rules its prose states? | rule candidates + `rule-auditor` |
+| MG-3 | Was everything an exercise demands actually taught? | `rule-auditor` |
+| MG-4 | Reading it end to end — **is it enough?** | `reader-pov` whole-book mode |
+| MG-5 | Does the source render as intended? | `scripts/lint_render.py` |
+| MG-6 | Did the code run, or is the debt declared? | runner audit + waivers |
+
+Every `critical`/`major` from MG-1–4 goes through adversarial verification with a
+mandate to refute before it reaches the human.
+
+**The verdict is computed** — any unresolved critical → `BLOCKED`; any unresolved
+major → `NEEDS-REVISION`; else `PASS`. **The gate iterates**: fixes are proposed,
+the human decides, accepted edits make the claim index emit `PROPAGATE`, and those
+siblings become the next round's scope. It closes on `PASS` **plus two
+consecutive rounds with no new blocking findings** — one clean round is not
+evidence. At `max_rounds` it escalates rather than relaxing the criterion.
+
+```bash
+python scripts/manuscript_gate.py --round 1        # prepare + verdict
+python scripts/manuscript_gate.py --verdict-only   # after dispatching auditors
+```
+
 ## Phase 5: Build & export
 
 Read `references/build-export.md`. Per profile: books → EPUB/PDF/DOCX (pandoc,
@@ -247,6 +292,42 @@ organization's front matter; product-docs → markdown tree with frontmatter
 ready for a static site; papers → LaTeX/PDF with formatted bibliography from
 the claims map. Output to `build/`. Always confirm targets with the human
 before building.
+
+Preflight, every profile: `lint_render.py --fail-on critical`,
+`sync_manuscript.py --check`, `validate_claim_index.py --quiet`.
+
+## Definition of done
+
+`phase: complete` is not a label anyone may assert. It requires all of:
+
+1. every unit `archived`;
+2. the manuscript gate at `PASS` **and converged**;
+3. no unresolved `CHANGED` in `bible/claim-index.yaml`;
+4. every build target verified;
+5. a done report the human accepted, listing open `waivers` and unresolved
+   minors.
+
+Anything short of that is `blocked-on-manuscript-gate`, and saying so is the
+useful thing to do.
+
+## Scripts
+
+Deterministic checks live in `scripts/` and run without a model. Python 3.10+
+and PyYAML; `git` optional (it powers the incomplete-fix detector). They all
+accept `--root` and `--units`, so every one of them also runs standalone over a
+book this skill never scaffolded. See `scripts/README.md`.
+
+| Script | What it is for |
+|---|---|
+| `manuscript_gate.py` | Phase 4.5: deterministic sweep, agent inputs, verdict |
+| `lint_render.py` | MG-5 rendering hazards; build preflight gate |
+| `build_concept_dossier.py` | MG-1 dossiers and `bible/claim-index.yaml` |
+| `validate_claim_index.py` | `PROPAGATE` — what else says the same thing |
+| `bootstrap_probes.py` | Seeds concept probes from the KG, glossary, or frequency |
+| `extract_rule_candidates.py` | MG-2 rule ↔ instance pairing |
+| `extract_code_corpus.py` | MG-6 test-plan raw material |
+| `lint_style.py` | The Proofreader's mechanical half |
+| `sync_manuscript.py` | `final/` → `manuscript.md`, with `--check` |
 
 ---
 
@@ -274,6 +355,10 @@ project/
 │   ├── style-guide.md         # decisions + calibration passages
 │   ├── scope.md · glossary.md · knowledge-graph.yaml · continuity-tracker.md
 │   ├── sources/               # PDFs + .md extractions + figures/ + sources.md index
+│   ├── claim-index.yaml       # concept × location + propagation (generated)
+│   ├── concept-probes.yaml    # generated · concept-probes-tuned.yaml (hand-written)
+│   ├── audit-config.yaml      # fix-run commits, persona names, code kinds
+│   ├── do-not-touch.md        # auto-refutation anchors — verified-correct passages
 │   ├── claims-map.yaml        # scientific-paper only
 │   ├── characters/ world.md plot-structure.md arcs.md timeline.md   # literary only
 │   ├── examples-library.md    # profiles with a running example
@@ -284,8 +369,9 @@ project/
 │                              # critique.md scorecard.yaml adversarial-report.md
 ├── drafts/_archive/ · drafts/_polish/
 ├── final/unit-NN.md
-├── project-status.yaml        # schema_version 3.0, phase, retries, runs log
-├── manuscript.md              # Phase 4 (sequential profiles)
+├── project-status.yaml        # phase, retries, runs, waivers, manuscript_gate
+├── manuscript.md              # Phase 4, generated by scripts/sync_manuscript.py
+├── reviews/manuscript-gate-<date>/   # Phase 4.5: GROUNDING.md, round-N/, REPORT.md
 └── build/                     # Phase 5 outputs
 ```
 
@@ -306,6 +392,9 @@ project/
 | Adversarial pass | `references/adversarial-verify.md` |
 | Retry cap hit | `references/loopback-handoff.md` |
 | After approval | `references/chapter-digest.md` + `references/archiving.md` |
+| Last unit archived | `references/manuscript-gate.md` — **not optional** |
+| Claim propagation, "what else says this?" | `references/claim-index.md` |
+| Executable code with no runner | `references/test-plan.md` |
 | Phase 5 | `references/build-export.md` |
 
 Templates live in `templates/` — the scaffold copies from these. The

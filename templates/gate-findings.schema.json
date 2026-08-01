@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "book-factory/gate-findings",
+  "title": "Manuscript gate findings",
+  "description": "One file per auditor run, written to reviews/manuscript-gate-<date>/round-<N>/findings/. The orchestrator reads these to compute the gate verdict, so the shape is a contract, not a suggestion. Two things in here are unusual and deliberate. First, non-defect verdicts (N1, N2, D7a) are REQUIRED emissions, not optional: a review system that can only record defects loses its positive knowledge the moment the report is filed, and the next pass reopens settled questions — in the audit this comes from, that produced a fix pass that introduced a factual error into correct text. Second, every finding must carry other_sites and searched_whole_chapter, because a finding that names one line produces a fix that lands in one of N sites, which is the defect class this whole gate exists to eliminate.",
+
+  "type": "object",
+  "required": ["check", "lens", "subject", "findings"],
+  "additionalProperties": false,
+
+  "properties": {
+    "check": {
+      "description": "Which gate check produced this file.",
+      "enum": ["MG-1", "MG-2", "MG-3", "MG-4", "MG-5", "MG-6"]
+    },
+    "lens": {
+      "description": "The auditor's angle. Lenses run blind to each other on purpose: convergence on the same obvious finding costs you the three different ones.",
+      "enum": ["pairs", "numbers-and-absolutes", "source", "rule-vs-instance", "exercise-coverage", "whole-book-read", "mechanical"]
+    },
+    "subject": {
+      "description": "Concept id, rule id, unit id, or 'manuscript' — whatever this run audited.",
+      "type": "string"
+    },
+    "round": { "type": "integer", "minimum": 1 },
+    "pass": {
+      "description": "Which of the two passes over this subject produced the file. MG-1 and MG-2 auditors run twice with the same prompt and the findings are merged: measured, two runs of the same lens over the same rules disagreed on real sites, and one finding existed in only one run. The variance is in the sampling, not the instructions, so no prompt tuning removes it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2
+    },
+    "instances_judged": {
+      "description": "MG-2/MG-3: how many instances were actually judged. A count lower than the dossier's total means the run was a sample, and the report must say so.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "sampled": {
+      "description": "True when the auditor could not judge every instance. A sampled run may never be reported as 'clean'.",
+      "type": "boolean",
+      "default": false
+    },
+    "adjudications": {
+      "description": "MG-1 source lens only: per-claim verdict against the grounding library.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/adjudication" }
+    },
+    "deferred": {
+      "description": "Questions the auditor could not settle from the available sources. These are NOT findings. Sending an unresolved question to a finding is how a review invents verdicts.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "why_unresolved"],
+        "properties": {
+          "question": { "type": "string" },
+          "why_unresolved": { "type": "string" },
+          "sites": { "type": "array", "items": { "type": "string" } },
+          "needs": {
+            "description": "What would settle it: a live runner, a source the project does not have, a decision from the human.",
+            "enum": ["runner", "source", "human-decision"]
+          }
+        }
+      }
+    },
+    "notes": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+
+  "$defs": {
+    "location": {
+      "description": "path:line into a unit file, e.g. final/unit-05.md:186.",
+      "type": "string",
+      "pattern": "^[^:]+:[0-9]+$"
+    },
+
+    "passage": {
+      "type": "object",
+      "required": ["location", "quote"],
+      "properties": {
+        "location": { "$ref": "#/$defs/location" },
+        "quote": {
+          "description": "VERBATIM from the file. A paraphrase here makes the finding unverifiable and it will be dropped. If you cannot quote it, do not report it.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+
+    "adjudication": {
+      "type": "object",
+      "required": ["claim", "book_sites", "verdict"],
+      "properties": {
+        "claim": { "type": "string" },
+        "book_sites": { "type": "array", "items": { "$ref": "#/$defs/location" } },
+        "verdict": {
+          "description": "When the book and an authoritative source disagree, the source wins — unless the disagreement is version drift, which is reported as drift and not as an error. Between CONTRADICTED and NOT_COVERED, choose NOT_COVERED: only decisive evidence confirms.",
+          "enum": ["SUPPORTED", "CONTRADICTED", "NOT_COVERED", "VERSION_DRIFT"]
+        },
+        "authority": {
+          "description": "path:line into the grounding library plus a verbatim quote. Required for CONTRADICTED and VERSION_DRIFT — without it the item belongs in `deferred`.",
+          "type": "string"
+        },
+        "note": { "type": "string" }
+      }
+    },
+
+    "finding": {
+      "type": "object",
+      "required": ["relation", "severity", "canonical_site", "other_sites",
+                   "searched_whole_chapter", "fix_scope", "reasoning"],
+      "properties": {
+        "relation": {
+          "description": "Apply the ORDERED decision tree in references/manuscript-gate.md and stop at the first that applies. D-codes are defects; N-codes and D7a are verified-correct results and are first-class. D9 (omitted precondition) is the class reviewers structurally miss — read the Omission section before deciding it is not one.",
+          "enum": [
+            "D1", "D2", "D3", "D4", "D4a", "D5", "D6", "D7", "D7a", "D8", "D9",
+            "N1", "N2"
+          ]
+        },
+        "violation_kind": {
+          "description": "REQUIRED on D6 and D9. `contradiction` = the instance asserts something incompatible with the rule. `omission` = the instance applies the pattern while staying silent about a precondition the rule declares mandatory — no two statements are opposed, there is a statement and a silence. Measured: a lens caught 6 of 6 contradictions and 0 of 2 omissions before this distinction existed. This field is also the generalization check: a run whose omissions all match the worked examples in the spec learned the examples, not the class.",
+          "enum": ["contradiction", "omission"]
+        },
+        "omitted_precondition": {
+          "description": "D9 only: the precondition, stated in words, and where the rule declares it. What a reader who copies this instance would not know.",
+          "type": "string"
+        },
+        "p1": { "$ref": "#/$defs/passage" },
+        "p2": {
+          "description": "The second side of the pair. Null for D3 (gap) and for single-passage findings.",
+          "oneOf": [{ "$ref": "#/$defs/passage" }, { "type": "null" }]
+        },
+        "proposition_1": { "type": "string" },
+        "proposition_2": { "type": "string" },
+        "scope_1": {
+          "description": "Required for D1. If you cannot state two different scopes in words, you cannot emit D1 — and you cannot file N2 either. Choose one and say why.",
+          "type": "string"
+        },
+        "scope_2": { "type": "string" },
+        "baseline_1": {
+          "description": "Required for D7 and D7a. Two figures measured against different baselines are not a contradiction. Skipping this is a known, expensive false positive.",
+          "type": ["string", "null"]
+        },
+        "baseline_2": { "type": ["string", "null"] },
+        "absolute_side": {
+          "description": "For D5: which passage carries the unqualified absolute, or null.",
+          "type": ["string", "null"]
+        },
+        "incompatible_because": { "type": "string" },
+        "gap_description": {
+          "description": "D3 only: which documented behavior NO unit covers.",
+          "type": "string"
+        },
+        "reader_impact": {
+          "description": "D3 and MG-4: what the reader concretely runs into. Not 'this is confusing' — what they try, and what happens.",
+          "type": "string"
+        },
+        "authority": {
+          "description": "path:line + verbatim quote from the grounding library. Required whenever the finding rests on a source.",
+          "type": "string"
+        },
+
+        "instance": { "$ref": "#/$defs/passage" },
+        "rule_statement": {
+          "description": "MG-2: the rule restated in the auditor's own words, with its scope. If you cannot state the scope you cannot judge instances against it.",
+          "type": "string"
+        },
+        "rule_site": { "$ref": "#/$defs/location" },
+        "verdict": {
+          "description": "MG-2/MG-3 per-instance verdict.",
+          "enum": ["COMPLIES", "VIOLATES", "DECLARED_EXCEPTION", "OUT_OF_SCOPE",
+                   "TAUGHT", "NOT_TAUGHT", "SOLUTION_MISSING"]
+        },
+        "taught_in": {
+          "description": "MG-3: where the exercise's prerequisite was actually taught, or null when it never was.",
+          "type": ["string", "null"]
+        },
+
+        "severity": {
+          "description": "critical blocks the gate; major blocks until fixed or waived; minor rides into the report. N-relations use null.",
+          "enum": ["critical", "major", "minor", null]
+        },
+        "canonical_site": {
+          "description": "The site that should carry the definitive wording after the fix.",
+          "type": "string"
+        },
+        "other_sites": {
+          "description": "EVERY other site that repeats the claim. Mandatory and complete. A finding that names a single line produces an incomplete fix, which is the defect this gate exists to eliminate. An empty array asserts that you looked and there are none.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fix_scope": {
+          "enum": ["edit_p1", "edit_p2", "edit_both", "edit_rule", "edit_instance",
+                   "add_crossref", "add_qualifier", "add_content", "no_action"]
+        },
+        "searched_whole_chapter": {
+          "description": "True only if you actually searched the whole unit, not just the cited line. Previous fixes usually landed in a neighbouring paragraph; if one did, there is no defect. Reporting true without doing it is the single most expensive lie you can tell this system.",
+          "type": "boolean"
+        },
+        "single_round": {
+          "description": "Set by the orchestrator when merging the two passes: true when only one of them produced this finding. It is the cheapest false-positive signal available — no extra agent, no extra pass — so these go to the front of the adversarial verification queue. Findings both passes produced independently are the ones to trust first.",
+          "type": "boolean"
+        },
+        "read_surrounding_section": { "type": "boolean" },
+        "reasoning": {
+          "description": "Two to four sentences. Why this is what you say it is.",
+          "type": "string",
+          "minLength": 1
+        },
+
+        "verification": {
+          "description": "Filled by the adversarial verifier, never by the finder.",
+          "type": "object",
+          "required": ["verdict", "reason"],
+          "properties": {
+            "verdict": {
+              "description": "Between CONFIRMED and UNVERIFIED, choose UNVERIFIED. Only decisive evidence confirms.",
+              "enum": ["CONFIRMED", "REFUTED", "UNVERIFIED"]
+            },
+            "reason": { "type": "string" },
+            "evidence": { "type": "string" },
+            "searched_whole_chapter": { "type": "boolean" },
+            "other_occurrences": { "type": "array", "items": { "type": "string" } },
+            "corrected_severity": {
+              "enum": ["critical", "major", "minor", null]
+            }
+          }
+        },
+
+        "resolution": {
+          "description": "Filled by the orchestrator after the human decides. This is what makes the convergence loop terminate: a finding the human rejected is persisted as do_not_touch in the claim index and never returns.",
+          "type": "object",
+          "properties": {
+            "decision": { "enum": ["fixed", "rejected", "waived", "open"] },
+            "round": { "type": "integer" },
+            "rationale": { "type": "string" },
+            "waiver_id": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

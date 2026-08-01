@@ -75,6 +75,38 @@ Check and report:
   introduced here. Flag anything that is neither. product-docs (no digests):
   a concept must be introduced in the article or linked as a prerequisite —
   assumed prior reading is a flag.
+
+  Know what this checks and what it does not. It verifies **presence** — the
+  concept is declared somewhere. It does not verify **consistency**: one unit
+  can say a wildcard means "all listed values" and another "no reduction at
+  all", and both pass, because the concept is declared in both. A digest is a
+  ~400-word summary and a contradiction lives in the fine print of a claim,
+  which the digest does not preserve. That gap shipped a book.
+
+  So when `bible/claim-index.yaml` exists, add the consistency half by running
+  `python scripts/validate_claim_index.py --quiet`. Any `CHANGED` or
+  `PROPAGATE` touching a concept this unit uses goes into `coherence.md` as a
+  terminology-drift finding routed to the Writer: someone edited a passage and
+  this unit may be one of its orphaned siblings. Do not chase it further —
+  full cross-unit consistency is MG-1's job at the manuscript gate, with every
+  passage in view. Yours is only the case where the orphaned sibling is the
+  unit in your hands.
+
+- **Omitted precondition**: an earlier unit declared a condition mandatory for
+  some pattern, and this unit uses the pattern without mentioning it. Nothing
+  false is written — there is no contradiction to spot, only a silence.
+
+  This is the class every reviewer misses. Measured on a finished book, a lens
+  of this kind caught 6 of 6 contradictions and 0 of 2 omissions. It is also the
+  more expensive defect: a reader who copies the passage loses the condition
+  that made it correct and gets no error.
+
+  So ask both questions of every concept this unit reuses — "does this
+  contradict what was said before?" and **"does this stay silent about something
+  declared mandatory before?"** — and note that the second carries an inverted
+  default: when in doubt, flag it. Route to the Writer as a terminology/framing
+  finding. Contract and worked examples: `references/manuscript-gate.md`
+  § Omission.
 - **Opening-structure repetition (rhet-6 evidence)**: identify which
   structure from the voice-profile's opening rotation this unit uses.
   Compare against the Writer's self-assessment declaration and against the

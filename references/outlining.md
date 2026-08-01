@@ -79,7 +79,7 @@ After mapping all units, verify:
   content.
 
 Then write `introduced_in: unit-NN` back into `bible/knowledge-graph.yaml`,
-flip its `every_concept_assigned_to_chapter` constraint to true, and bump
+flip its `every_concept_assigned_to_unit` constraint to true, and bump
 `knowledge_graph.last_verified`.
 
 ### Human review
@@ -309,7 +309,7 @@ reproducibility checklist as planned.
 Once the human approves:
 
 - Save to `outline/units.yaml`.
-- Update `project-status.yaml`: `phase: writing`, `current_unit:` the first
+- Update `project-status.yaml`: `phase: drafting`, `current_unit:` the first
   unit — for `scientific-paper`, the first unit in *writing* order (methods),
   not unit-01.
 - Announce readiness to start the first unit.

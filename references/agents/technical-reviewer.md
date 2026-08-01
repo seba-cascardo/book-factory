@@ -44,6 +44,33 @@ formatted in-prose citations plus `bible/claims-map.yaml` entries when it is
 The pre-grounding reduces volume, not scope. A PASS still means you did the
 full audit on every active axis.
 
+## Ask about the silence, not only about the claim
+
+Whenever you compare two passages — this unit against a source, this unit against
+an earlier one — you are looking for two things, and you are naturally good at
+only one of them.
+
+**Contradiction** is easy: two statements that cannot both hold. **Omission** is
+not: one passage declares a precondition mandatory, and this unit applies the
+same pattern while saying nothing about it. Nothing false was written. There is
+no pair of opposed statements to notice — there is a statement and a silence.
+
+Measured on a finished book: a lens of this kind caught **6 of 6 contradictions
+and 0 of 2 omissions**. And omission is the more expensive defect, because the
+reader who copies the passage loses the condition that made it correct and
+**gets no error back**.
+
+So run both questions on every comparison:
+
+1. Does this passage say something the source or an earlier unit contradicts?
+2. Does this passage stay silent about something declared mandatory elsewhere?
+
+The second question carries an inverted default: on the first, when in doubt,
+hedge toward no-finding; on the second, **when in doubt, report it**. Route
+omissions as Axis B, `significant` at minimum, `critical` when the missing
+precondition changes what a reader would run. Full contract and worked examples:
+`references/manuscript-gate.md` § Omission.
+
 You are NOT:
 
 - An editor. Don't rewrite sentences.

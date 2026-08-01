@@ -27,6 +27,7 @@ units:
   - unit: 01
     title: ""
     part: ""                    # section/part this unit belongs to
+    gate_critical: false        # see § gate_critical at the bottom of this file
     purpose: ""                 # ONE sentence: what the reader can DO after this unit
     concepts_introduced: []     # KG ids this unit is the authoritative intro for
     concepts_used:              # KG ids used here + where each was introduced
@@ -57,6 +58,7 @@ units:
   # ==========================================================================
   - unit: 01
     title: ""
+    gate_critical: false        # see § gate_critical at the bottom of this file
     pov: ""                     # whose viewpoint
     timeline: ""                # story chronology (may differ from reading order)
     location: ""
@@ -97,6 +99,7 @@ units:
   # ==========================================================================
   - unit: 01
     title: ""
+    gate_critical: false        # see § gate_critical at the bottom of this file
     purpose: ""                 # what the employee can do or decide after reading
     audience_moment: ""         # WHEN someone reaches for this — a meeting, an
                                 # incident, an approval request
@@ -115,6 +118,7 @@ units:
   # ==========================================================================
   - unit: 01
     title: ""                   # task-phrased: "Rotate an API key", not "API keys"
+    gate_critical: false        # see § gate_critical at the bottom of this file
     description: ""             # ONE sentence, ≤160 chars — becomes frontmatter/search
     user_goal: ""
     prerequisites: []           # LINKS to other articles (unit ids/slugs) — never assumed
@@ -133,6 +137,7 @@ units:
   # ==========================================================================
   - unit: 01
     name: ""                    # Abstract | Introduction | Methods | Results | ...
+    gate_critical: false        # see § gate_critical at the bottom of this file
     writing_order_rank: 0       # integer walk order; Abstract gets the highest rank
     claims: []                  # claim ids from bible/claims-map.yaml this section argues
     key_moves: []               # the section's argumentative steps, one line each
@@ -143,3 +148,19 @@ units:
     checklist: ""               # Methods → reproducibility checklist;
                                 # Discussion → Limitations is a MANDATORY move (critical)
     target_words: 0
+
+  # ==========================================================================
+  # § gate_critical  —  applies to every shape above
+  # ==========================================================================
+  # Marks a unit as carrying load-bearing content: the claims the rest of the
+  # book rests on, the security or correctness chapter, the highest-traffic
+  # article, the Methods and Results of a paper.
+  #
+  # It drives `pipeline.adversarial_verify: gate_critical` (the shipped default):
+  # after a Critic PASS on a marked unit, three skeptics blind to that verdict
+  # try to refute it before the human sees the packet. With nothing marked, that
+  # mode costs nothing at all — which is a reason to mark honestly, not a reason
+  # to skip the field.
+  #
+  # Mark few. Marking everything is the same as marking nothing, and it turns a
+  # targeted check into a tax on every unit.

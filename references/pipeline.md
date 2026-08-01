@@ -388,9 +388,18 @@ that becomes the next cycle's instruction.
 A batch pass over already-approved units, run in Phase 4 after the
 full-manuscript audit and Proofreader steps. Default: enabled for `fast`
 mode, ignored for `full` (Reader-POV already ran per unit), never for
-literary (its per-unit pipeline already carries both agents). Disable with
-`pipeline.polish_pass.enabled: false`. Skip when fewer than 3 units were
-approved since the last run — the cross-unit signal is too thin.
+literary (its per-unit pipeline already carries both agents). Skip when fewer
+than 3 units were approved since the last run — the cross-unit signal is too
+thin.
+
+Disabling it with `pipeline.polish_pass.enabled: false` requires a `waivers`
+entry in `project-status.yaml`. In `fast` mode this pass is Reader-POV's only
+per-batch appearance, so switching it off silently means a book gets written
+without ever being read as a reader — which is exactly what happened once, for
+three months, while the project reported itself finished. The whole-book read at
+the Phase 4.5 gate still runs regardless; it is not skippable, and it is not a
+substitute for this one (batch reading catches tics and pacing; the whole-book
+read catches exposition order and sufficiency).
 
 Why it exists: in `fast` mode this is Reader-POV's first read; and the
 per-unit Humanizer sees one unit at a time, so a tic appearing once per unit
@@ -416,6 +425,13 @@ accept-all, partial, or reject. Accepted edits update `final/unit-NN.md` in
 place; CG Mode B re-runs on any changed unit. Digests are NOT regenerated —
 they are writing-time calibration artifacts and the writing is done.
 
+**After any accepted edit, run `python scripts/validate_claim_index.py`.** Its
+`PROPAGATE` lines go into the same packet as the diff, so the person who just
+accepted an edit sees immediately which sibling passages it orphaned. This is the
+step whose absence produced three separate incomplete fixes in one project, the
+longest surviving seventeen days and a full audit — nobody knew the edited
+passage had siblings. See `references/claim-index.md`.
+
 The pass does not re-run the Critic (the units are approved; this is voice
 and pacing, not a gate) and does not touch the KG, glossary, or scope —
 vocabulary changes are the human's call. If the human's acceptance rate
@@ -434,3 +450,8 @@ the trigger to 5+ units or disable it for this project.
 - `references/chapter-digest.md`, `references/archiving.md` — post-approval.
 - `references/agents/continuity-guardian.md` — Mode A/B detail, singularity
   audit, Phase 4 full-manuscript audit.
+- `references/manuscript-gate.md` — **Phase 4.5**, which fires automatically
+  when the last unit is archived. Nothing in this file gates the book; it gates
+  units. The gate is there.
+- `references/claim-index.md` — the propagation warning that runs after any
+  edit to an approved unit.

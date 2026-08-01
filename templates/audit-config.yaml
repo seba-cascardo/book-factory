@@ -1,0 +1,68 @@
+# bible/audit-config.yaml — configuration for the deterministic audit scripts.
+#
+# Entirely optional. Every field has a default, and a project with no such file
+# still gets every check — just without the two project-specific signals below.
+#
+# See scripts/README.md and references/claim-index.md.
+
+# ── The incomplete-fix detector ──────────────────────────────────────────
+# Short shas of past fix passes. A related pair where ONE side has blame in one
+# of these commits and the other does not is the mechanical signature of a fix
+# that landed in 1 of N sites — found without spending a token on a model.
+#
+# This is the highest-value field in the file, and the one nobody thinks to
+# fill. Add a sha every time you run a fix pass; `git log --oneline` after the
+# pass is the whole ritual.
+fix_run_commits: []
+  # - 3e6829b
+  # - 5bdbcc8
+
+# ── Running-example characters ───────────────────────────────────────────
+# Names of the people in the book's running example. Used ONLY to down-rank
+# pure narration when ranking claim passages — and guarded so it never trims a
+# sentence that also states a rule.
+#
+# The guard is load-bearing and was learned the hard way: without it, the rule
+# penalty trimmed the canonical passage of a real cross-unit contradiction,
+# because that passage opened with a character's name. A didactic book teaches
+# its rules THROUGH the example, so penalizing the example penalizes exactly the
+# claims that matter most.
+persona_names: []
+  # - Ana
+  # - Carlos
+
+# ── Code classification (MG-6 corpus extraction) ─────────────────────────
+# Regex per artifact kind, matched against each fenced block's body. With no
+# config, blocks group by their fence language tag, which is usually enough.
+code_kinds: {}
+  # load_script:  ["^\\s*(LOAD|SELECT)\\b", "\\bRESIDENT\\b"]
+  # expression:   ["\\{<.*>\\}"]
+  # security:     ["\\bSECTION ACCESS\\b"]
+
+# ── Thresholds ───────────────────────────────────────────────────────────
+# Change these only with a measurement in hand. The comments in
+# scripts/bookkit/textmetrics.py record what was tried and what the numbers
+# were; the defaults are not guesses.
+
+related_threshold: 0.12   # Jaccard over content terms, stopwords removed.
+                          # Deliberately BELOW the noise p99 (0.154): a false
+                          # positive costs one extra pair to read, a false
+                          # negative loses the defect. Not symmetric, so it
+                          # leans toward noise.
+                          #
+                          # Note the metric: n-gram overlap finds nothing on
+                          # real prose, because a well-written book rephrases
+                          # instead of repeating. Measured on twin passages of a
+                          # known defect: 0.037 / 0.000 / 0.000.
+
+related_top_k: 5          # neighbours kept per passage. This bounds PROPAGATE,
+                          # and a PROPAGATE that sends you to review 65 passages
+                          # gets ignored — which is how the artifact this
+                          # replaces went stale.
+
+home_cap: 12              # top-N claims kept from a concept's home unit. The
+                          # home unit contributes ~80% of hits and is where the
+                          # book contradicts itself LEAST. Cross-linked passages
+                          # are never trimmed regardless of score.
+
+use_blame: true           # set false to skip git entirely

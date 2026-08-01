@@ -32,27 +32,38 @@ looks for reasons to disagree. Same text, different findings.
 
 ```yaml
 pipeline:
-  adversarial_verify: off      # off | gate_critical | every_unit | every_N
-  adversarial_verify_n: 3      # read only when the mode is every_N
+  adversarial_verify: gate_critical   # off | gate_critical | every_unit | every_N
+  adversarial_verify_n: 3             # read only when the mode is every_N
 ```
 
 | Mode | Runs on |
 |------|---------|
-| `off` (default) | never |
-| `gate_critical` | units marked `gate_critical: true` in `outline/units.yaml` |
+| `off` | never |
+| `gate_critical` (default) | units marked `gate_critical: true` in `outline/units.yaml` |
 | `every_N` | the first unit, every Nth unit after it, **and** all gate-critical units |
 | `every_unit` | every unit |
 
 Recommend `every_N: 3` for long projects (10+ units) — that is where
-Critic normalization has time to develop. `gate_critical` is the floor for
-high-stakes projects on a budget. Mark as gate-critical the units where a
+Critic normalization has time to develop. Mark as gate-critical the units where a
 shipped defect is most expensive: the opening unit, a climax, Methods and
 Results in a paper, the highest-traffic article in a docs set. The human
 can also request the pass ad hoc for any unit.
 
-Default is `off` because the pass costs three extra agent runs per
-verified unit. Skeptics run on the audit tier (`models.roles.default`);
-override only if the human asks.
+**The default is `gate_critical`, not `off`.** It used to be `off`, on the
+reasoning that three extra agent runs per unit is real cost. The measurement
+says otherwise: review agents inflate, and on a completed book six polish
+findings had to be downgraded by hand after verification — one asserting a
+function was "never taught" when the book explains it, another flagging a scope
+contradiction the chapter announces in as many words. A fix pass acting on a
+wrong finding costs more than the verification, and the revert costs more again.
+Once one of those edits introduced a factual error into correct text.
+
+With nothing marked `gate_critical`, this default costs nothing — which makes
+honest marking the thing that matters, not the flag itself. Mark few.
+
+Skeptics run on the audit tier (`models.roles.default`); override only if the
+human asks. `models.roles.adversarial` is accepted as an explicit override and
+takes precedence when set.
 
 ## Placement
 
@@ -206,3 +217,65 @@ One run-log line per skeptic in `project-status.yaml → runs`:
   enforces the declared voice, never proposes another one.
 - **Not a substitute for human review.** It sharpens the packet; the
   human still decides.
+
+## Manuscript-gate mode (Phase 4.5)
+
+The gate reuses the mandate, not the panel. Per-unit the three skeptics attack a
+whole unit blind; at the gate the subject is **one finding**, and one verifier is
+enough because the finding already names its own evidence.
+
+Every `critical` and `major` finding from MG-1 through MG-4 gets one verifier
+before it reaches the human packet. Findings that survive go into the report;
+findings that do not are recorded as refuted, and their concept gets
+`do_not_touch: true` plus the counter-evidence in `bible/claim-index.yaml`. That
+last step is what stops the next round from rediscovering them, and without it
+the convergence loop does not terminate.
+
+> You are an **adversarial verifier**. Your job is to **REFUTE** the finding
+> below, not to confirm it.
+>
+> Read `reviews/manuscript-gate-<date>/GROUNDING.md` first — the authority rules,
+> the false-positive suppressors, the voice contract and the DO-NOT-TOUCH
+> anchors all override your judgement.
+>
+> FINDING: `<the finding JSON>`
+>
+> Mandatory before you form an opinion: **read the complete section around each
+> passage**, not the cited line. The lesson this whole gate is built on is that
+> previous fixes usually landed in a neighbouring paragraph — and if one did,
+> there is no defect.
+>
+> Valid grounds for refutation:
+> - the two passages are in **different scopes** → REFUTED as `N2`
+> - the figures differ because the **baselines** differ and both are named →
+>   REFUTED as `D7a`
+> - the newer passage **already carries the qualifier**; the finding points at a
+>   line that was already fixed
+> - the quote is **not verbatim**, or the location is wrong
+> - the passage precedes the unit where the concept is introduced — that is
+>   **progressive disclosure**, the book's design, not an error
+> - it is **voice** (the project's signed register), not a claim about behavior
+>
+> **NOT valid grounds, on a `D9` (omitted precondition):** "the two passages do
+> not contradict each other". That is the definition of an omission, not a
+> refutation of one. A `D9` says one passage applies a pattern while staying
+> silent about a condition another passage declared mandatory — there is no
+> contradiction to find, and looking for one is exactly the blindness that made
+> a lens miss 2 of 2 omissions while catching 6 of 6 contradictions. To refute a
+> `D9` you must show the precondition IS stated where the instance is, or that it
+> does not apply there, or that the rule never made it mandatory.
+>
+> Return JSON: `{"verdict":"CONFIRMED|REFUTED|UNVERIFIED","reason":"...",
+> "evidence":"path:line + verbatim quote","searched_whole_chapter":true,
+> "other_occurrences":[...],"corrected_severity":"critical|major|minor|null"}`
+>
+> **Between CONFIRMED and UNVERIFIED, choose UNVERIFIED.** Only decisive evidence
+> confirms. `other_occurrences` is not optional — a confirmed finding that names
+> one line produces a fix that lands in one of N sites, which is the defect this
+> gate exists to eliminate.
+
+Fill the finding's `verification` block from the result (see
+`templates/gate-findings.schema.json`). A `corrected_severity` lower than the
+reported one belongs in the report's **"What was downgraded as inflated"**
+section with its counter-evidence — that section is how you find out your
+auditors are running hot.

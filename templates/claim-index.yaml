@@ -1,0 +1,117 @@
+# bible/claim-index.yaml — concept × location matrix with propagation.
+#
+# This file answers one question that nothing else in the pipeline can:
+# "I am about to edit this line — what ELSE says the same thing?"
+#
+# Without it, a fix lands in one of N sites and the document contradicts
+# itself until someone notices. That is not hypothetical: it is the defect
+# class that produced three separate incomplete fixes in one project, the
+# longest surviving seventeen days and a full audit.
+#
+# GENERATED, not hand-written:
+#   python scripts/build_concept_dossier.py --emit-index
+#   python scripts/validate_claim_index.py [--fix]
+#
+# `sites` is regenerated wholesale. Four fields survive regeneration because
+# they carry human decisions: each site's `role`, and per concept
+# `verified_against`, `do_not_touch` and `note`. Everything else is derived.
+#
+# ── Why this does not go stale ────────────────────────────────────────────
+#
+# Three structural properties, not three habits. Break any one and this
+# becomes another checklist that is quietly wrong:
+#
+#   1. It is an INDEX OF POINTERS, not a store of claims. It cannot disagree
+#      with the book — either the fingerprint is in the text or the validator
+#      says so. A file that stores the claim text can drift; this cannot.
+#   2. It has NO state field a human must remember to tick. No `[ ]`/`[x]`,
+#      no "reviewed: true". All state is derived from the text and git blame.
+#      `do_not_touch` looks like an exception and is not: it records a closed
+#      verification, and the anchor it points at is checkable.
+#   3. Something READS IT AUTOMATICALLY — the manuscript gate every round, the
+#      build preflight, and the post-edit step after accepted polish edits.
+#      An index only a human consults every few weeks is an index that is
+#      wrong every few weeks.
+#
+# ── The fingerprint, and why locations are not the key ────────────────────
+#
+# Each site stores `fingerprint` = sha1 of the normalized passage text. The
+# `location` is a convenience that the validator repairs. That asymmetry IS
+# the detector:
+#
+#   passage MOVED    → fingerprint still present, on another line
+#                      → auto-repaired, silently, no human involved
+#   passage EDITED   → fingerprint gone
+#                      → every sibling in `related` is flagged suspect and the
+#                        validator emits PROPAGATE with the list
+#
+# Indexing by line number would invert this: every insertion would look like
+# an edit, the warnings would be constant noise, and within a week nobody
+# would read them.
+#
+# ── Field reference ───────────────────────────────────────────────────────
+#
+# Per concept:
+#   name              display name; from the knowledge graph when there is one
+#   home              unit where the concept is introduced
+#   verified_against  "<source path>:<line>" once the concept has been closed
+#                     against an authoritative source. A POSITIVE verdict, and
+#                     first-class: "verified correct, do not reopen" is as
+#                     valuable a result as a defect, and its absence is what
+#                     lets a later pass "fix" text that was already right.
+#   do_not_touch      true when a finding against this concept should be
+#                     treated as refuted by default. Always write `note` with
+#                     the counter-evidence when setting this — an anchor with
+#                     no reason is just an assertion.
+#   note              why it is verified / why it must not be touched
+#   sites             every passage that makes a claim about the concept
+#
+# Per site:
+#   location          "<path>:<line>" — repaired automatically when it moves
+#   role              CANON     the definitive statement. Exactly one per
+#                               concept: the invariant the validator enforces.
+#                     repeats   restates CANON elsewhere
+#                     derives   draws a consequence from CANON
+#                     qualifies adds a condition or exception
+#                     summary   recap bullet; can be the second side of a
+#                               contradiction, never the first
+#                     example   inside an exercise or worked example
+#                     crossref  a pointer, not a claim
+#   fingerprint       sha1(normalized text)[:12] — the durable key
+#   claim             first 110 chars, for reading the file. NOT the source of
+#                     truth: the text in final/ is.
+#   blame             "<short sha> <YYYY-MM-DD>" or "—"
+#   related           up to 5 sites carrying the same sub-claim (Jaccard over
+#                     content terms >= 0.12). This is what makes PROPAGATE
+#                     usable: it sends you to the 3 or 4 passages that matter
+#                     instead of all 65 sites of the concept. A warning that
+#                     asks for 65 gets ignored, and an ignored warning is
+#                     exactly how the artifact this replaces went stale.
+
+schema_version: "1.0"
+
+concepts:
+  # --- Example entry (the generator overwrites this file wholesale) ---
+  example_concept:
+    name: "[display name]"
+    home: unit-05
+    verified_against: null        # e.g. "bible/sources/spec.md:12177"
+    do_not_touch: false
+    note: null
+    sites:
+      - location: final/unit-05.md:186
+        role: CANON
+        fingerprint: 17524a9349e1
+        claim: "[first 110 characters of the passage — for reading, not for truth]"
+        blame: "a9c1a44 2026-07-10"
+        related:
+          - final/unit-05.md:454
+          - final/unit-05.md:196
+
+      - location: final/unit-05.md:454
+        role: repeats
+        fingerprint: 8f3b21c07de4
+        claim: "[the passage that restates it, seventeen days out of date]"
+        blame: "2b3995e 2026-07-12"
+        related:
+          - final/unit-05.md:186

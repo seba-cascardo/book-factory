@@ -190,13 +190,51 @@ pipeline:
   # (references/loopback-handoff.md). Reviewer→Writer, Critic→any,
   # adversarial-confirmed REVISEs, and human rejections share this one budget.
 
-  adversarial_verify: "off"      # off | gate_critical | every_unit | every_N
+  adversarial_verify: "gate_critical"   # off | gate_critical | every_unit | every_N
   # Runs AFTER a Critic PASS, before human review. Three skeptics blind to the
   # Critic's verdict try to refute the unit. A finding confirmed by >=2 becomes
   # a REVISE (counts against retry_cap); single hits ride into the human packet.
-  # `every_N: 3` is recommended for long projects. See
-  # references/adversarial-verify.md.
+  #
+  # Default is `gate_critical`, not `off`. Review agents inflate — measured on a
+  # completed book, six polish findings had to be downgraded by hand, one of them
+  # claiming a function was "never taught" when the book explains it. Verification
+  # is cheaper than the fix pass that acts on a wrong finding, and far cheaper
+  # than the revert. Units carrying the book's load-bearing claims are the ones
+  # worth the three extra runs.
+  #
+  # Mark those units `gate_critical: true` in outline/units.yaml. With none
+  # marked this mode costs nothing. `every_N: 3` suits long projects.
   # adversarial_verify_n: 3      # uncomment and set when mode is every_N
+
+  manuscript_gate:
+    # Phase 4.5 — the book-level gate. See references/manuscript-gate.md.
+    # Fires automatically when the last unit is archived; the orchestrator never
+    # reports a book done without it.
+    max_rounds: 5                # then escalate, never relax the criterion
+    rounds_without_new_to_close: 2
+    # Two, not one. One clean round is not evidence: finder agents miss things
+    # and the defect tail is long. The second round is where this earns its cost.
+    concept_min_units: 2         # audit concepts spanning at least this many units
+    top_concepts: 40             # cost dial for MG-1; whatever is cut is reported
+    top_rules: 30                # cost dial for MG-2; likewise
+    # Both quotas are split PER FAILURE MODE, not spent on a single ranking.
+    # Measured: ranking cross-unit and intra-unit candidates on one scale emitted
+    # 40 cross-unit rules and ZERO intra-unit ones — and intra-unit is 7 of 10
+    # defects. A constant bonus in a ranker is a stratifier, not a weight.
+
+    passes_per_subject: 2        # MG-1 and MG-2 auditors run twice per subject
+    # Two runs of the same lens over the same rules disagreed on real sites, and
+    # one finding existed in only one run. The variance is in the sampling, not
+    # the prompt, so no tuning removes it — two passes and a union do. A finding
+    # only one pass produced is the cheapest false-positive signal available.
+    checks:                      # disable ONLY with a `waivers` entry
+      MG-1: true                 # concept audit (cross-unit contradictions)
+      MG-2: true                 # rule vs its own instances
+      MG-3: true                 # exercise vs delivered content; auto-skipped
+                                 # for profiles with no exercises
+      MG-4: true                 # whole-book read — "is it enough?"
+      MG-5: true                 # render lint
+      MG-6: true                 # executable code: runner or declared debt
 
   reader_panel: 1                # how many Reader-POV personas simulate per run
   # 1 by default. The profile names the persona(s); set higher only when a

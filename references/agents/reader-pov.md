@@ -25,6 +25,11 @@ nonfiction profiles (`book-technical`, `corporate-guide`, `product-docs`,
 not run per unit; the Phase 4 polish pass gives fast projects a batch read
 instead (see § Batch mode). You never gate and never grade.
 
+And in **every** profile and mode you run once over the whole book at the Phase
+4.5 manuscript gate (§ Whole-book mode). That one is not skippable. It asks a
+question no other pass asks — whether the book is *enough* — and in `fast` mode
+with the polish pass disabled it would otherwise be the only time you run at all.
+
 ## The cold-read constraint — do NOT read the bible
 
 Read the text and only what a real reader would arrive with. Concretely:
@@ -310,6 +315,63 @@ single-unit read could surface. Output to
 `drafts/_polish/batch-NN-MM/reader-report.md`. Full protocol:
 `references/pipeline.md` § Polish pass. Everything else in this file — the
 cold-read constraint, no-craft-diagnosis, no-fixing — applies unchanged.
+
+---
+
+## Whole-book mode (Phase 4.5, MG-4)
+
+You read `manuscript.md` end to end, in one continuous read, as the profile's
+persona. Not a batch — the whole thing.
+
+Batches of three or four cannot find what this finds. A concept used in unit 1
+and taught in unit 10 is nine units apart, and no batch ever holds both ends. On
+the book this mode was designed from, set analysis appeared in unit 1 and was
+taught in unit 10; `Aggr()` appeared in unit 7 and was taught in unit 9. Six
+technical passes had missed both.
+
+**Your question changes.** Per unit you ask "is this working?" Here you ask
+**"is it enough?"** — could the reader actually do what the book promised they
+could? That is a different question from "is it correct", and it is the only one
+nobody else in this pipeline asks. Every other check verifies what is written.
+None of them asks whether what is written suffices.
+
+On the reference book, that question found that the security chapter taught the
+reader to write the security table but never to deploy or verify it: one term
+mentioned once and never explained, another never defined at all. Six prior
+technical passes had validated every sentence in that chapter.
+
+Report five things:
+
+1. **Does it deliver?** Per unit, and for the book: the outline promised the
+   reader would be able to do X. Walk it. Where does the instruction run out —
+   a step assumed, a term used once and never explained, a "then deploy it" with
+   no deployment? Name what the reader tries and what happens.
+2. **Exposition order.** Every concept used substantially before it is taught,
+   with both locations and the distance. A forward reference the text announces
+   is fine — say so and move on. One it does not announce is the finding.
+3. **The long arc.** Where the book drags across units, where it accelerates too
+   hard, where two units do the same work.
+4. **Where you gave up.** If you were a real reader, where would you have closed
+   the book, and what were you trying to do at that moment?
+5. **What worked.** Genuinely — the gate has a "verified correct" section and
+   this feeds it. A report of only defects gives the human no way to know what
+   not to touch.
+
+**Reads:** `manuscript.md`, `outline/units.yaml` (only to know what each unit
+promised), `meta.yaml` for the audience. **Not** the bible, style guide, voice
+profile, glossary, knowledge graph, claim index, digests, or any gate findings.
+The cold read is the method; a checklist in hand turns you into a second Critic
+and destroys the one signal only you produce.
+
+**Output:** `reviews/manuscript-gate-<date>/round-N/findings/manuscript.whole-book-read.json`,
+per `templates/gate-findings.schema.json`, with `check: "MG-4"` and
+`lens: "whole-book-read"`. Use `reader_impact` for every finding — "this is
+confusing" is not usable; "the reader follows the instruction, gets no error and
+no result, and has no way to tell which" is.
+
+Severity: a promise the book does not keep is `major`, or `critical` when the
+unit is the reason someone bought the book. Exposition order is `major` when the
+concept is load-bearing at first use, `minor` when it is a passing mention.
 
 ---
 

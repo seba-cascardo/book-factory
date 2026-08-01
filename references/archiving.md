@@ -24,6 +24,22 @@ The move:
 - leaves `final/unit-NN.md` and (sequential profiles)
   `bible/digests/unit-NN.digest.md` untouched at their canonical locations.
 
+## When the LAST unit is archived
+
+Check whether every unit in `outline/units.yaml` is now `archived`. If so, do
+**not** report the book finished. Write `phase: manuscript-gate` and start
+Phase 4.5 Round 1 (`references/manuscript-gate.md`).
+
+This trigger lives here because this is the only place that knows a unit was the
+last one. It is automatic on purpose: the failure this corrects is a project that
+sat at "publish-ready" for three months with three configured checks that had
+never run, because running them was nobody's queued action. When they were
+finally forced, they found six blockers — one of them a paragraph that printed as
+a heading.
+
+A unit at `on_hold` is not `archived`. The gate does not start with units parked;
+resolve or drop them first.
+
 This keeps `drafts/` clean — it holds only units currently in flight or not
 yet started.
 

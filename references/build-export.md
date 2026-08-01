@@ -45,6 +45,36 @@ Check availability before promising targets:
 
 Present the resulting capability matrix with the target confirmation.
 
+## Preflight — every profile, before any target
+
+```bash
+python scripts/sync_manuscript.py --check          # or drop --check to rebuild
+python scripts/lint_render.py --fail-on critical   # BLOCKS the build
+python scripts/validate_claim_index.py --quiet     # warns, never blocks
+```
+
+**`lint_render` blocks.** Its critical class is small and unarguable: a paragraph
+with a `---` directly under it prints as an H2 heading, an unclosed fence turns
+the rest of the document into code, an unclosed HTML comment eats visible text.
+All three read perfectly in the source, which is why one of them shipped in a
+book that had passed four technical audits. Fix the source, never the output.
+
+**`sync_manuscript --check` drifting** means someone hand-edited `manuscript.md`.
+It is derived; `final/` is the source of truth. Rebuild it, and find out who
+edited the derived file before you rebuild over their work.
+
+**`validate_claim_index` warns and does not block.** A hard gate on prose gets
+switched off within a week, and then there is no warning either. But print its
+`PROPAGATE` lines with the build report: shipping a document whose claim set is
+known to be internally inconsistent should be a decision somebody made, not a
+thing that happened.
+
+Until now this preflight existed only for `product-docs`. Every other profile
+handed `manuscript.md` straight to pandoc with no lint at all — including the
+pipeline's own handoff comments (`<!-- EDITOR`, `<!-- VOICE-RISK`,
+`<!-- PROOFREADER log`), which flow into `final/` by design and had nothing
+stopping them at the door.
+
 ## Shared preparation
 
 - Generate `build/metadata.yaml` from `bible/meta.yaml`: title, subtitle,

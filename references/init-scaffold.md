@@ -60,14 +60,26 @@ Base skeleton, all profiles:
 │   ├── scope.md                  ← empty shell
 │   ├── glossary.md               ← from templates/glossary.md
 │   ├── continuity-tracker.md     ← from templates/continuity-tracker.md
+│   ├── do-not-touch.md           ← from templates/do-not-touch.md — empty shell.
+│   │                               Where "verified correct, do not re-open"
+│   │                               lives. Create it now: a project that has to
+│   │                               invent the file later invents it after the
+│   │                               fix pass that needed it.
 │   └── sources/                  ← empty folder (setup populates the grounding library)
 ├── outline/
 │   └── units.yaml                ← schema present, no entries (Phase 2 fills)
 ├── drafts/
 │   └── _archive/                 ← empty; archiving policy writes here
 ├── final/                        ← empty
+├── reviews/                      ← empty; Phase 4.5 writes manuscript-gate-<date>/
 └── project-status.yaml           ← from templates/project-status.yaml, pre-filled (below)
 ```
+
+Not scaffolded, generated later, listed here so their absence is not a puzzle:
+`bible/claim-index.yaml`, `bible/concept-probes.yaml` and `bible/audit-config.yaml`
+are produced by `scripts/` at the manuscript gate (`references/claim-index.md`).
+`bible/concept-probes-tuned.yaml` is hand-written when the generated probes need
+narrowing.
 
 Per-profile additions and omissions:
 

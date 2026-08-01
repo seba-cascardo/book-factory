@@ -142,6 +142,27 @@ voice profile better than the previous one did, that is not a fail — note
 that the previous unit was the outlier. Why: gating on "sounds like the
 last unit" rewards homogeneity and locks in early drift.
 
+**Scoring `code-4`, and the silence it is easy to miss.** `code-4` asks
+whether a rule this unit states in prose is contradicted by the unit's own
+code or examples. Score two failure shapes, not one:
+
+- **Contradiction** — the example asserts something the rule forbids. Easy
+  to see, and the one everybody finds.
+- **Omission** — the example applies the pattern and says nothing about a
+  precondition the rule declared mandatory. Nothing false is written; there
+  is a statement and a silence.
+
+Measured on a finished book, a lens auditing exactly this caught 6 of 6
+contradictions and **0 of 2 omissions**. Omission is also the costlier
+defect: the reader copies the example, loses the condition that made it
+correct, and gets no error back.
+
+The defaults differ on purpose. On contradiction, when in doubt, do not
+fail the item. On omission, **when in doubt, fail it** — that inversion is
+what moved recall from 6/9 to 8/9 in the reference measurement, with no new
+false positives. Worked examples: `references/manuscript-gate.md`
+§ Omission.
+
 **`reader-report.md` (full mode and literary).** The reader reports
 experience; you diagnose cause and route:
 

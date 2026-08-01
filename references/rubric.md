@@ -177,6 +177,20 @@ every project end the same way; the ending belongs to the profile.
 | code-1 | significant | Every snippet has labeled input / expected output. | Writer |
 | code-2 | minor | Snippets are minimal — no decorative scaffolding. | Editor |
 | code-3 | minor | Code style matches `bible/meta.yaml` conventions. | Humanizer |
+| code-4 | critical | No rule this unit states in prose is contradicted by this unit's own code, example or bullet. | Writer |
+
+`code-4` is defence in depth against the dominant intra-unit defect. Measured on
+a completed book, **seven of ten** intra-unit defects were exactly this gesture:
+the unit states a rule and violates it in its own example a few lines later. The
+Technical Reviewer checks claims against sources, the Editor checks prose, and
+you check the unit as a whole — but until now nothing crossed the prose layer
+against the code layer, and this class walked through every gate.
+
+To score it: list the rules the unit states (strong modality, or a universal plus
+a breaking verb — "any function call on a loaded field breaks it" is a rule), then
+read every code block and example against them. Do not extend this across units;
+that is MG-2's job at the manuscript gate, with the whole book in view. And do
+not score voice: an emphatic imperative is register, not a rule about behavior.
 
 ### `consistency`
 
