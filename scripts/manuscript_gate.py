@@ -469,10 +469,22 @@ def main(argv: list[str] | None = None) -> int:
                     help="MG-5 + claim index + MG-6 only. Fast; run any time.")
     ap.add_argument("--verdict-only", action="store_true",
                     help="Recompute the verdict from existing findings; prepare nothing.")
+    # Cost dials, overridable per run. `pipeline.manuscript_gate` in meta.yaml is
+    # the normal home, but a standalone run over a book written by an earlier
+    # version has no such block — and defaults sized for a v3 project mean a few
+    # hundred agent runs on a first pass. Start small, calibrate, then scale.
+    ap.add_argument("--top-concepts", type=int, default=None,
+                    help="Override pipeline.manuscript_gate.top_concepts for this run.")
+    ap.add_argument("--top-rules", type=int, default=None,
+                    help="Override pipeline.manuscript_gate.top_rules for this run.")
     args = ap.parse_args(argv)
 
     project = load_project(args.root, args.units)
     cfg = gate_config(project)
+    if args.top_concepts is not None:
+        cfg["top_concepts"] = args.top_concepts
+    if args.top_rules is not None:
+        cfg["top_rules"] = args.top_rules
     unit_args = ["--root", str(project.root)]
     for u in (args.units or []):
         unit_args += ["--units", u]
