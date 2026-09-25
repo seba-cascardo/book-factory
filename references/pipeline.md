@@ -1,457 +1,458 @@
-# Pipeline Specification
+# Pipeline specification
 
-This file is the single authoritative spec of the Phase 3 writing pipeline:
-agent order, input/output contracts, the two gates, loopback rules, retry
-policy, digests, logging, and the Phase 4 polish pass. Read it before running
-the pipeline for the first time in a session. If any other file appears to
-disagree with this one on pipeline order or artifact names, this file wins —
-report the conflict.
+The authoritative spec of Phase 3: execution model, agent order, input/output
+contracts, gates, loops, retries, digests, logging, and the batch passes. If
+another file disagrees with this one on order, inputs or artifact names, this
+file wins — report the conflict. History and measurements:
+`docs/rationale/pipeline.md`.
+
+## Execution model
+
+The **orchestrator** is the session running the skill. It dispatches every
+agent as a **subagent** (Agent/Task tool) and never drafts unit prose itself.
+Each dispatch carries:
+
+```
+Role:    references/agents/<file>.md            (read first)
+Profile: references/profiles/<profile>.md
+Inputs:  <the exact list from the contract table below — nothing else>
+Write:   <output path(s)>
+Model:   models.roles.<role> → models.tiers.<tier> (inherit = no override)
+```
+
+**Isolation.** Reviewers are only independent if their context is.
+
+| Must run isolated, closed input list | Should run as subagents |
+|---|---|
+| Critic · Reader-POV (every mode) · adversarial skeptics and refuters · concept and rule auditors (Phase 4.5) · Continuity Guardian Mode A | Writer · Technical Reviewer · Editor · Humanizer · Proofreader · Continuity Guardian Mode B |
+
+An isolated agent receives only its listed inputs — never the orchestrator's
+conversation, other reviewers' reports it is not listed for, or the drafts'
+history. **Cold readers** (Reader-POV, adversarial skeptics) read
+`drafts/unit-NN/humanized.clean.md`, never `humanized.md`: run
+`python scripts/pipeline_step.py clean unit-NN` after every write to
+`humanized.md`.
+
+**Dispatch brackets**, around every agent run:
+
+```bash
+python scripts/pipeline_step.py check unit-NN <agent>     # non-zero → do not dispatch; fix the input
+# … dispatch …
+python scripts/pipeline_step.py done unit-NN <agent> --tier <t> --cycle <n>
+```
+
+A successful `check` records the dispatch time
+(`drafts/unit-NN/.dispatch.json`); `done` accepts only outputs written after
+it, so a stale critique, report or tracker cannot pass for new work. On a loop
+pass `--cycle N` to both (§ Loops). `check critic` and `check proofreader`
+also need `checks.json`, `coherence.md` and (literary, nonfiction `full`)
+`reader-report.md` newer than `humanized.md`, and refuse while `checks.json →
+blocking` holds a story block (`check critic`: or `errors` a failed tool). `check proofreader` further requires the
+Critic's PASS — recomputed from `scorecard.yaml` and matching `critique.md` —
+with no newer confirmed adversarial finding; `--human-override` (the human
+approved over a red scorecard) turns a non-PASS verdict into a note, never a
+story block.
+
+`done` verifies the output exists, is non-empty, not `null` and fresh, appends
+`runs.tsv`, and (editor, humanizer, proofreader) writes
+`drafts/unit-NN/role-diff-<agent>-c<N>.json`: first pass `draft.md → edit.md`
+(Editor) and `edit.md → humanized.md` (Humanizer); on an Editor/Humanizer loop
+cycle, the cycle's `humanized.c<N>.md` snapshot → `humanized.md`; the
+Proofreader `humanized.md → proofread.md`. `done critic` recomputes the
+verdict from the rows (`references/rubric.md`). Exit codes:
+
+| `done` exit | Meaning | Orchestrator |
+|---|---|---|
+| `0` | ok | next agent |
+| `1` | output missing, empty, `null`, stale, or no dispatch record | re-dispatch once (run `check` first); a second failure → stop and tell the human |
+| `3` | literary Writer: `ready` fails (R3) or a story blocker on the page (R4) | pause the unit (§ Orders) |
+| `4` | contract violation: the Editor added prose, the Proofreader made a non-mechanical change, the Critic's header disagrees with its rows | re-dispatch that agent once with the violation list; a second `4` in the same cycle → escalate |
+
+Never gate on a missing artifact. Agent names: `writer`, `technical_reviewer`,
+`editor`, `humanizer`, `reader_pov`, `continuity_a`, `critic`, `adversarial`,
+`proofreader`, `continuity_b`, `digest`. `done continuity_b` also needs
+`bible/story-ledger.yaml` updated when the unit's cards plant or pay. Why:
+`docs/rationale/pipeline.md#freshness`.
+
+**Script counts before the Critic:** `python scripts/pipeline_step.py checks
+unit-NN` writes `drafts/unit-NN/checks.json` + `checks.md`. Top-level keys of
+`checks.json`: `unit`, `profile`, `source`, `source_sha1`, `generated_utc`,
+`language`, `pack`, `words`, `notes`, `counts` (`count_rhet.py`, one entry per
+item: `counts.rhet-2`, `counts.ai_vocab`, `counts.weasels`,
+`counts.em_dash_narration`, `counts.sentence_length`, …), `identifiers`
+(`check_identifiers.py`, nonfiction: `identifiers.unknown`), `fiction`
+(`lint_fiction.py --unit`, literary: `fiction.findings`, info dropped),
+`story` (`check_story.py --unit`, literary: `story.findings`,
+`story.context.arcs_resolving_here`, `story.context.is_final_unit`, …),
+`tics` (literary: `tics.gestures`, `tics.over_quota`, `tics.repeated_ngrams`),
+`role_diff` (`role_diff.<agent>` = the latest role diff of the Editor,
+Humanizer, Proofreader: `touched_ratio`, `over_budget`, `violations`, …),
+`blocking` (story blockers) and `errors` (a tool that failed). A key that does
+not apply is `null`. Exit `2` = a tool failed (never gate on it); exit `3` = a
+story blocker (R1–R4): the unit pauses before the Critic. Agents copy these
+numbers; they never recount. `check … critic` and `check … proofreader` refuse
+a `checks.json` whose `source_sha1` is not the current `humanized.md`'s (re-run
+`checks`), whatever its mtime, and re-run the story check live on
+`humanized.md`.
+
+**Cross-model.** With `pipeline.adversarial_verify.cross_model: true`, the
+refutation passes (`references/adversarial-verify.md`) and the manuscript
+gate's MG-4 read go to a second model when a tool for one is available (a
+Codex MCP tool, the `debate` skill, or equivalent). Otherwise the human packet
+says "cross-model unavailable".
 
 ## Invariants
 
-Memorize these; they are the points where documentation drift historically
-produced real bugs:
+- **The Critic gates `humanized.md`**, every mode, every profile.
+- **The Humanizer runs every unit.** It alone applies prose fixes and
+  Technical Reviewer advisories.
+- **The Editor is structural only**: `check_role_diff.py` fails it when it adds
+  prose beyond transitions.
+- **Verdicts are computed** (`references/rubric.md`); counts come from
+  `checks.json`.
+- **The human approves the text that ships**: the Proofreader runs before human
+  review, and its diff is in the packet.
 
-- **The Critic always gates `humanized.md`** — every mode, every profile. The
-  Critic must audit the exact text the human will review; gating an earlier
-  artifact would let the Humanizer ship unaudited prose.
-- **The Humanizer runs every unit, in every mode.** There is no mode without
-  a Humanizer in the per-unit cycle.
-- **The Editor is structural only.** It never applies prose fixes and never
-  applies Technical Reviewer advisories — those belong to the Humanizer. One
-  owner per fix; two agents applying the same advisory produce colliding
-  edits and untraceable regressions.
-- **Verdicts are computed, not chosen.** The Critic fills
-  `drafts/unit-NN/scorecard.yaml`; the verdict falls out of it per the rule
-  in `references/rubric.md`.
+## Orders
 
----
-
-## The pipeline
-
-`bible/meta.yaml → pipeline.mode` selects `fast` (default) or `full` for
-nonfiction profiles (`book-technical`, `corporate-guide`, `product-docs`,
-`scientific-paper`). `book-literary` has a single flow — no fast/full split,
-because for fiction the Humanizer and Reader-POV are load-bearing per unit.
-
-### Nonfiction — `fast` (default)
+`pipeline.mode` selects `fast` (default) or `full` for nonfiction.
+`book-literary` has one flow.
 
 ```
-Writer → Technical Reviewer → Editor → Humanizer
-  → Continuity Guardian (Mode A: coherence) → Critic (GATE)
-  → [Adversarial Verify, if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian (Mode B: tracker)
-  → digest (sequential profiles) → archive
+Nonfiction fast:
+  Writer → Technical Reviewer → Editor → Humanizer → CG Mode A → checks
+  → Critic → [Adversarial] → Proofreader → Human review
+  → (approve) pipeline_step.py approve → CG Mode B → digest → archive
+Nonfiction full: fast + Reader-POV after the Humanizer.
+Literary:
+  [ready gate passed once] Writer (scene by scene) → Editor (assembly)
+  → Humanizer → Reader-POV → CG Mode A (literary) → checks → Critic
+  → [Adversarial] → Proofreader → Human review
+  → (approve) pipeline_step.py approve → CG Mode B → digest (literary template)
+  → reader-journal update → archive
 ```
 
-Use `fast` for tutorials, references, manuals, internal guides, docs sites,
-MVP drafts — anywhere correctness dominates and reading experience is
-important but not the product.
+`[Adversarial]` runs only after a Critic PASS, per
+`pipeline.adversarial_verify.mode`. `corporate-guide` and `product-docs` may add
+reader testing after the Humanizer (profile file, `pipeline.reader_testing`).
 
-### Nonfiction — `full` (opt-in)
+**Literary readiness gate.** Before the first unit is drafted (`phase:
+drafting`), `python scripts/pipeline_step.py ready` must exit 0: every character
+in the outline has a complete sheet with an arc, signed by the human through
+`python scripts/pipeline_step.py sign <slug> --by <human>` (`signed_hash`
+still matching), `bible/plot-structure.md` defines the ending,
+`bible/story-ledger.yaml` exists and is well formed, and the seeds and human
+calibration passages exist; the outline is approved first (`project-status.yaml
+→ outline.approved`). The same full `ready` is re-checked by `check … writer`
+and `done … writer` for EVERY unit, by `approve` and by `apply-edits`: a unit
+whose own cast is complete still waits while anything in the book's design is
+not. Blockers go to the human through `references/character-questionnaire.md`.
+**New character mid-book** (exit `3` from `done … writer` or `checks`;
+`NEW-CHARACTER` — a name mid-sentence, one that is no common word and never
+lowercase, sentence-initial included, or one in a speaker/actor position;
+`EXTRA-PROMOTE` — any `world.md` word (a name or a place), outline location or
+extra's label word that speaks or acts; `CHAR-UNKNOWN` — a name in
+`characters_present` or in a scene card that no sheet knows; a Writer request;
+`check … writer` exits 1 on the outline cases): the unit pauses. **Triage first, one question per flagged token:**
+ask the human whether it is a person. Not a person (a first-person verb or a
+rare word opening a sentence) → add it to `bible/lexicon.yaml →
+common_words` and re-run the step; the questionnaire does not run. A real
+public figure seen from a distance — on a screen, in the news, in a memory —
+who never shares a scene with the characters (the human decides, never the
+agent) → `bible/lexicon.yaml → non_person_names`, re-run. A person in the
+story →
+the questionnaire runs for that character, sheet,
+arcs, outline and story ledger are updated and signed, and the unit restarts
+at the Writer with its retry counter reset — a design change, not a failed
+cycle. The Writer never invents a named character. **Story blocks (R1–R4) are
+never overridable**: not by the Critic, a human approval, `--human-override`,
+`approve --force`, or a gate waiver.
 
-Identical, plus **Reader-POV between the Humanizer and Continuity Guardian
-Mode A**. Use `full` when prose quality matters as much as correctness:
-customer-facing books, anything with marketing weight. Reader-POV is the only
-agent deferred to `full` — its per-unit value is the most uneven for
-reference-style material, and the Phase 4 polish pass gives fast-mode
-projects a batch Reader-POV read anyway.
+## Contracts
+
+Every agent loads its agent file, the profile, `bible/meta.yaml`, and — prose
+agents (Writer, Humanizer, Critic, CG Mode A) — `bible/voice-profile.md`, then
+the inputs below. It writes exactly the listed artifacts.
+
+### Nonfiction
+
+| Agent | Reads | Writes |
+|---|---|---|
+| Writer | style-guide, glossary, scope, knowledge-graph, sources/, claims-map (paper), outline entry, all digests + most recent final unit (continuity only), tracker, examples-library, anti-mediocrity-nonfiction; on a loop: the worklist (§ Loops) | `grounding-notes.md`, `draft.md` |
+| Technical Reviewer | draft, grounding-notes, scope, glossary, knowledge-graph, sources/, claims-map (paper), outline entry, digests, validation-surface, `identifiers.json` (it runs `check_identifiers.py --unit unit-NN --file drafts/unit-NN/draft.md --json drafts/unit-NN/identifiers.json`; the index is built at setup with `--build-index`) | `tech-review.md` |
+| Editor | draft (or `humanized.md` on a loop), tech-review § Notes → Editor, outline entry | `edit.md` (loop: patches `humanized.md`) |
+| Humanizer | edit (or `humanized.md` on a loop), tech-review, style-guide, glossary, anti-mediocrity-nonfiction, most recent digest | `humanized.md` |
+| Reader-POV (full) | `humanized.clean.md`, outline entry `purpose`, persona from the profile, previous final (sequential) | `reader-report.md` |
+| CG Mode A | humanized, most recent 1–2 finals, digests, style-guide, glossary, tracker, anti-mediocrity-nonfiction | `coherence.md` |
+| Critic | humanized, draft (self-assessment comment only), checks.json + checks.md, tech-review, coherence, reader-report (full), reader-test (if run), outline entry, style-guide, glossary, tracker, claims-map (paper), digests, `rubric.md` + `rubric-nonfiction.md`, anti-mediocrity-nonfiction | `critique.md`, `scorecard.yaml` |
+| Adversarial skeptics | `humanized.clean.md` + lens inputs — blind to every report | `adversarial-report.md` (merged) |
+| Proofreader | humanized, style-guide, glossary, one or two finals | `proofread.md` |
+| CG Mode B | `final/unit-NN.md`, tracker, digests | tracker update + audit notes |
 
 ### Literary
 
-```
-Writer → Editor → Humanizer → Reader-POV → Critic (GATE)
-  → [Adversarial Verify, if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian → digest → archive
-```
-
-The Technical Reviewer does not exist in the literary flow. The Continuity
-Guardian additionally runs a singularity audit every 5 approved units — see
-`references/agents/continuity-guardian.md`.
-
-### Why one Technical Reviewer, not two
-
-The Technical Reviewer audits multiple axes in one pass: **Axis A** (claims,
-code, versions — machine-checkable via `references/validation-surface.md`),
-**Axis B** (mental models, framings, terminology — checked against
-`bible/sources/`), and for `scientific-paper` **Axis C** (reference
-integrity: the citation exists, says what it is claimed to say, is not
-retracted). All axes measure content correctness against different
-references; one agent means one bible read and one report (`tech-review.md`)
-for downstream agents. If `bible/sources/` is empty, Axis B runs against
-glossary + tracker + scope only, and the report carries an explicit
-"grounding library empty — Axis B partial" note that propagates to the human
-review packet. Never silent.
-
----
-
-## Agent contracts
-
-Every agent loads, in this order: (1) its agent file from
-`references/agents/`, (2) the profile file from `references/profiles/`,
-(3) `bible/meta.yaml`, (4) `bible/voice-profile.md` if it is a prose agent
-(Writer, Humanizer, Critic, Continuity Guardian Mode A), then (5) its
-contract inputs below. An agent may read more than its inputs (the bible is
-always fair game) but writes exactly the artifacts listed — nothing else.
-
-Anti-mediocrity files (`anti-mediocrity-nonfiction.md` /
-`anti-mediocrity-literary.md`, per profile) are loaded by Writer, Humanizer,
-Critic, and CG Mode A only. Reader-POV and Proofreader deliberately do not
-load them — scope discipline.
-
-### Nonfiction contracts
-
-| Agent | Reads (beyond agent file, profile, meta, voice-profile) | Writes |
+| Agent | Reads | Writes |
 |---|---|---|
-| Writer | style-guide, glossary, scope, sources/, claims-map (paper), outline entry, all digests + most recent final unit, tracker, anti-mediocrity | `drafts/unit-NN/grounding-notes.md` + `drafts/unit-NN/draft.md` |
-| Technical Reviewer | draft, grounding-notes, scope, glossary, sources/, claims-map (paper), outline entry, digests, validation-surface | `drafts/unit-NN/tech-review.md` |
-| Editor | draft, tech-review (awareness only — see below), outline entry | `drafts/unit-NN/edit.md` |
-| Humanizer | edit, tech-review (applies its advisories), style-guide, anti-mediocrity, most recent digest | `drafts/unit-NN/humanized.md` |
-| Reader-POV (full) | humanized, outline entry; persona from the profile | `drafts/unit-NN/reader-report.md` |
-| CG Mode A | humanized, most recent 1–2 final units, all digests, style-guide, glossary, tracker, anti-mediocrity | `drafts/unit-NN/coherence.md` |
-| Critic (gate) | humanized, tech-review, coherence, reader-report (full), style-guide, tracker, rubric, digests, anti-mediocrity | `drafts/unit-NN/critique.md` + `drafts/unit-NN/scorecard.yaml` |
-| Adversarial skeptics | humanized + lens-specific inputs — blind to critique and scorecard | `drafts/unit-NN/adversarial-report.md` |
-| Proofreader | `final/unit-NN.md` (after human approval) | updates `final/unit-NN.md` in place |
-| CG Mode B | `final/unit-NN.md`, tracker, digests | tracker update + audit notes |
-
-### Literary contracts
-
-| Agent | Reads (beyond agent file, profile, meta, voice-profile) | Writes |
-|---|---|---|
-| Writer | style-guide, characters/, world, plot-structure, arcs, timeline, outline entry, all digests + most recent final unit, tracker, anti-mediocrity-literary | `drafts/unit-NN/draft.md` |
-| Editor | draft, outline entry | `drafts/unit-NN/edit.md` |
-| Humanizer | edit, style-guide, anti-mediocrity-literary | `drafts/unit-NN/humanized.md` |
-| Reader-POV | humanized, outline entry | `drafts/unit-NN/reader-report.md` |
-| Critic (gate) | humanized, reader-report, style-guide, tracker, rubric, digests, anti-mediocrity-literary | `drafts/unit-NN/critique.md` + `drafts/unit-NN/scorecard.yaml` |
-| Proofreader | `final/unit-NN.md` | updates in place |
-| Continuity Guardian | `final/unit-NN.md`, tracker, digests | tracker update + audit notes |
+| Writer | style-guide, characters/ (sheets for `characters_present`) + `_extras.md`, world, plot-structure, arcs, timeline, story-ledger, outline entry (scene cards), literary digests + most recent final unit (continuity only), tracker, anti-mediocrity-literary; on a loop: the worklist | `draft.md` (scenes marked `<!-- SCENE s1 -->`); key scenes also `key-sN-vK.md` — the human picks, the orchestrator swaps the pick into `draft.md` before the Editor |
+| Editor | draft (or `humanized.md` on a loop), outline entry | `edit.md` — assembly, order, transitions; no new prose (loop: patches `humanized.md`) |
+| Humanizer | edit (or `humanized.md` on a loop), style-guide, anti-mediocrity-literary | `humanized.md` |
+| Reader-POV | `humanized.clean.md`, `bible/reader-journal.md`, the previous `final/` unit, the pairwise benchmark named in the journal's `Benchmark:` line (attached by the orchestrator), persona — **no outline** | `reader-report.md` incl. its journal entry |
+| CG Mode A (literary) | humanized, outline entry, sheets of `characters_present` + `_extras.md`, world, timeline, tracker, story-ledger, literary digests, most recent 1–2 finals | `coherence.md` (continuity + facts lane) |
+| Critic | humanized, draft (self-assessment only), checks.json + checks.md, reader-report, coherence, outline entry, characters/, arcs, plot-structure, story-ledger, style-guide, tracker, digests, `rubric.md` + `rubric-literary.md`, anti-mediocrity-literary | `critique.md`, `scorecard.yaml` |
+| Adversarial skeptics | `humanized.clean.md` + lens inputs | `adversarial-report.md` |
+| Proofreader | humanized, style-guide, characters/ (names) | `proofread.md` |
+| CG Mode B | `final/unit-NN.md`, tracker, story-ledger, digests | tracker + ledger update |
 
 Notes:
 
-- The Writer's **pre-draft grounding pass** (nonfiction) reads
-  `bible/sources/` before drafting and emits `grounding-notes.md`. This
-  front-loads grounding so the Reviewer verifies citations instead of
-  re-deriving them, cutting avoidable Reviewer→Writer loopbacks. If sources/
-  is empty or has nothing relevant to the unit, skip the pass with a
-  documented note in `grounding-notes.md`.
-- The Writer's **self-assessment** travels at the top of `draft.md` as an
-  HTML comment: which opening structure from the voice-profile rotation it
-  used (the Critic verifies `rhet-6` against it), and — literary — the
-  friction inventory per scene. Details in the writer agent files.
-- The Editor reads `tech-review.md` only so it does not restructure around
-  content the Reviewer flagged for change. It applies none of it. Prose-level
-  findings the Editor notices go into `edit.md` as HTML-comment flags for the
-  Humanizer, never as silent fixes.
-- Voice calibration is **always against `bible/voice-profile.md`**, never
-  against neighboring units. Reading the most recent unit is for continuity
-  of argument or story — where the reader left off — not for imitating its
-  prose. Calibrating against neighbors rewards homogeneity drift.
+- **Grounding pass** (nonfiction): the Writer reads `bible/sources/` before
+  drafting and writes `grounding-notes.md`; skipped with a note when nothing
+  relevant exists.
+- **Self-assessment** travels as an HTML comment **at the end of `draft.md`**:
+  declared opening structure (nonfiction), grounding summary, open questions;
+  literary per `references/agents/writer-literary.md`.
+- **Editor and advisories**: the Editor reads the Reviewer's structural notes
+  only and applies none of its advisories; prose issues it notices become
+  `<!-- FOR HUMANIZER -->` flags.
+- **Voice calibration is always against `bible/voice-profile.md`**, never
+  against neighbouring units. Prior units are read for continuity only.
 
----
+## Technical Reviewer mini-gate (nonfiction)
 
-## The Technical Reviewer mini-gate (nonfiction only)
-
-Runs after the Writer, before the Editor. A smaller gate than the Critic:
-its only hard-stop loopback target is the Writer.
-
-| Verdict | Action |
-|---|---|
-| **PASS** | Proceed to Editor. `tech-review.md` carries advisories downstream. |
-| **REVISE** | Loopback to Writer with specific instructions. |
-| **ESCALATE** | Ask the human — typically a glossary conflict, wrong pinned version, known-wrong source, or (papers) an unverifiable load-bearing citation. |
-
-The Reviewer never loops back to the Editor or Humanizer — they run after it
-and consume its report. This keeps the pipeline's one multi-target gate (the
-Critic) clean. Reviewer→Writer cycles count against the same retry cap as
-Critic cycles.
-
----
+After the Writer, before the Editor. `PASS` → Editor (advisories ride
+downstream). `REVISE` → Writer. `ESCALATE` → human (glossary conflict, wrong
+pinned version, known-wrong source, unverifiable load-bearing citation). It
+never loops to the Editor or Humanizer. Its cycles share the retry cap.
 
 ## The Critic gate
 
-The Critic is not a step that passes a deliverable forward; it is a **gate**.
-It audits `humanized.md` and emits `critique.md` (template
-`templates/critique-report.md`) plus `scorecard.yaml` (template
-`templates/scorecard.yaml`).
+The Critic audits `humanized.md` and writes `scorecard.yaml` and `critique.md`.
+Verdicts `PASS | REVISE | REWORK | ESCALATE` are computed per
+`references/rubric.md` — nowhere else; `done critic` recomputes them from the
+rows and exits `4` when the header disagrees. The orchestrator routes on
+`## Verdict:` and `## Loopback target:`. **ESCALATE** is not a loop: produce the
+escalation packet (`references/loopback-handoff.md`), set the unit `on_hold`
+in `project-status.yaml`, and wait for the human's decision.
 
-**The verdict is computed from the scorecard.** The computation rule —
-severity counts to PASS / REVISE / REWORK / ESCALATE — lives in
-`references/rubric.md` and only there. Do not restate or approximate it in
-any other file; two copies of a threshold rule will drift.
+Routing is by **problem type**, carried by each rubric row's target:
 
-| Verdict | Meaning |
+| Problem | Target |
 |---|---|
-| **PASS** | Ready for the human (or Adversarial Verify, if enabled). Minor issues noted, not blocking. |
-| **REVISE** | Fixable. Loopback to exactly one named agent, with rationale. |
-| **REWORK** | Failed at a level polish cannot rescue. Always → Writer. |
-| **ESCALATE** | Above the pipeline's pay grade. Ask the human. |
+| Structure, order, pacing (nonfiction), within-unit continuity of placement | Editor |
+| Facts, code, versions, framing, missing content, contradiction with bible or prior units | Writer |
+| Voice, generic prose, AI-isms, rhythm, rhetoric overruns, unapplied advisories, nonfiction clarity | Humanizer |
+| Humanizer over budget (`voice-8` / literary `voice-6`) | Writer |
+| Literary comprehension, "would close the book" | Writer; literary pacing → Editor |
+| The outline itself is wrong; a named character without a complete sheet | `escalate` |
 
-The `critique.md` header (verdict, loopback target, one-line rationale) is
-machine-readable — the orchestrator uses it to decide what runs next.
+## Loops
 
-### Loopback by problem type
+Loopback targets are exactly `Writer | Editor | Humanizer | escalate`.
 
-The REVISE target is determined by the TYPE of problem, never its severity:
+1. **Snapshot first**, before every loopback, whatever the target:
+   `python scripts/pipeline_step.py snapshot unit-NN --reason
+   critic|tr|adversarial|human [--target writer|editor|humanizer]` closes cycle
+   N: it copies whatever exists of `humanized.md`, `draft.md`, `edit.md` and
+   `scorecard.yaml` to `<name>.c<N>` (the plateau rule compares the
+   scorecards) and opens cycle N+1 in `drafts/unit-NN/loop-state.json` —
+   reason, target (default: the critique's `## Loopback target:`, the
+   adversarial report's, else Writer), worklist, and the Writer's REVISE
+   source. A Critic ESCALATE is refused (§ The Critic gate). Every agent of
+   the new cycle runs `check` and `done` with `--cycle N+1`.
+2. **Worklist.** Every target reads `critique.md` § Specific loopback
+   instructions plus the failing rows, and the report of the loop's reason:
+   `critique.md` (critic), `tech-review.md` (tr), `adversarial-report.md`
+   (adversarial), `drafts/unit-NN/human-notes.md` (human — the orchestrator
+   appends the dated notes there). `check <target> --cycle N+1` refuses a
+   missing worklist or one older than that agent's previous dispatch.
+3. **Re-entry.**
 
-| Type of problem | Loopback target |
-|---|---|
-| Structure, pacing, section/scene order, within-unit continuity | **Editor** |
-| Factual error, broken code, wrong version, terminology drift, mental-model failure, framing | **Writer** (with tech-review findings as input) |
-| Voice drift, generic prose, AI-isms, rhythm, rhetoric-budget overruns, dialogue voice | **Humanizer** — in every mode; the Humanizer always exists |
-| Target reader confused or bored | **Reader-POV + Humanizer** (full, literary) or **Writer** (fast) |
-| Contradicts bible or prior units | **Writer** (with bible/tracker as input) |
-| Outline beat not delivered or wrong | **ESCALATE** — the outline is a human-approved artifact; agents do not relitigate it |
+   | Target | Input → output | What re-runs after |
+   |---|---|---|
+   | Writer, REVISE | the source `check writer --cycle N+1` names → new `draft.md` = that text with targeted fixes only | the whole chain, first-pass contracts (Editor `draft → edit`, Humanizer `edit → humanized`) |
+   | Writer, REWORK | outline + critique → fresh `draft.md` | the whole chain |
+   | Editor / Humanizer | patches `humanized.md` in place | Reader-POV (literary always; nonfiction if a `reader_pov` row failed) → CG Mode A → checks → Critic |
 
-### Retry policy
+   **Writer REVISE source**: the snapshot of the latest text
+   (`humanized.c<N>.md`, or `draft.c<N>.md` when the loop re-entered before
+   the Humanizer existed). When the cycle broke a role contract — Humanizer
+   over budget (`voice-6` / `voice-8`, `role_diff.humanizer.over_budget`) or
+   an Editor violation — it is the last text **before** the violating agent:
+   `edit.c<N>.md` (Humanizer) or `draft.c<N>.md` (Editor), so the violation
+   is not carried into the next draft.
 
-A unit may loop at most `pipeline.retry_cap` times (from `bible/meta.yaml`):
-**2** for `fast`, **3** for `full` and literary. The cap counts ALL loopbacks
-for the unit — Reviewer→Writer, Critic→any agent, adversarial-confirmed
-REVISEs, and human-triggered revisions share one budget.
+   `check_role_diff.py` (via `done`) verifies the Editor added no prose and
+   measures the Humanizer's touched ratio on every pass, first or loop.
 
-On cap hit, do NOT emit a vague "ask the human". Produce the structured
-escalation packet in `references/loopback-handoff.md`: per-cycle diff,
-failure-pattern diagnosis, three concrete options, recommended pick. The
-unit pauses until the human chooses; then `retries.by_unit[unit-NN]` resets
-to 0 (the chosen path is a fresh attempt).
+   **Technical Reviewer REVISE** (nonfiction, before any Humanizer run):
 
----
+   ```bash
+   python scripts/pipeline_step.py snapshot unit-NN --reason tr     # draft.c1.md; cycle 2 opens
+   python scripts/pipeline_step.py check unit-NN writer --cycle 2   # names draft.c1.md + tech-review.md
+   # Writer → new draft.md + grounding-notes.md, then: done unit-NN writer --tier T --cycle 2
+   # technical_reviewer, editor, humanizer: check/done --cycle 2 (first-pass inputs)
+   ```
+4. **Plateau rule.** If a cycle resolves none of the previous cycle's failing
+   rows (same or larger failing set, compared against `scorecard.c<N>.yaml`),
+   stop and produce the escalation packet now, whatever budget remains.
+5. **Retry cap**: `pipeline.retry_cap` — 2 `fast`, 3 `full` and literary. One
+   budget for Reviewer→Writer, Critic→any, confirmed adversarial findings and
+   human rejections. On cap or plateau: `references/loopback-handoff.md`.
 
-## Adversarial Verify (optional slot)
+## Adversarial verify
 
-Config: `pipeline.adversarial_verify: off | gate_critical | every_unit |
-every_N` (default `off`; `every_N: 3` recommended for long projects). When
-active, it runs **after a Critic PASS and before human review** — never on a
-failing unit.
-
-Three skeptics run in parallel, **blind to the Critic's verdict and
-scorecard**, each with one lens: (a) profile/register compliance,
-(b) correctness/grounding, (c) reader experience. Their mandate is to refute
-the unit. A finding confirmed by ≥2 skeptics converts the PASS into a REVISE
-toward the appropriate loopback target (counts against the retry cap);
-single-skeptic findings ride into the human packet as observations. Output:
-`drafts/unit-NN/adversarial-report.md`. Full protocol:
-`references/adversarial-verify.md`.
-
-The slot exists because a gate that always approves in one voice develops
-blind spots; independent skeptics with a refutation mandate have repeatedly
-caught problems a PASS had waved through.
-
----
+Optional, after a Critic PASS, before the Proofreader. Three blind skeptics
+with one lens each; a finding is confirmed by two skeptics or by a refutation
+pass that upholds it; confirmed non-minor findings force a REVISE (counts
+against the cap). Protocol: `references/adversarial-verify.md`.
 
 ## Continuity Guardian — two modes
 
-- **Mode A — pre-gate coherence (nonfiction).** Before the Critic, reads
-  `humanized.md` against `bible/voice-profile.md`, the most recent 1–2
-  approved units, and all digests. Flags voice drift from the profile,
-  terminology drift, heading/notation/format inconsistency with what the
-  reader has already seen. Writes `coherence.md`. Advisory only — it does not
-  update the tracker; the Critic folds its findings into the scorecard
-  (voice drift → Humanizer target; glossary/terminology drift → Writer).
-- **Mode B — post-approval tracker.** After the Proofreader, on the approved
-  `final/unit-NN.md`: updates `bible/continuity-tracker.md` and runs the
-  scheduled cross-unit audit. Literary adds the every-5-units singularity
-  audit here. Mode B never touches drafts.
+- **Mode A (pre-gate, isolated).** Nonfiction: voice drift from the profile,
+  terminology, notation and format drift against recent finals and digests.
+  Literary: continuity against tracker, timeline, world and sheets, plus the
+  facts lane when `literary.fact_check: realistic`. Writes `coherence.md`;
+  never edits; the Critic folds it into rows.
+- **Mode B (post-approval).** On `final/unit-NN.md`: updates the tracker (and,
+  literary, the story ledger) and runs scheduled audits. Never touches drafts.
 
-The split matters: Mode A protects the reader's experience of consistency
-*before* the gate; Mode B keeps the project's memory accurate *after* the
-decision. Merging them tempts the Guardian to edit — which is not its job.
+Details: `references/agents/continuity-guardian.md`.
 
----
+## Human review
+
+The packet is short; full reports are linked, not pasted.
+
+**Nonfiction**: the text that ships (`drafts/unit-NN/proofread.md`); the
+Proofreader's changed sentences (`role-diff-proofreader-c<N>.json →
+changes`); the verdict, most important problem and failing rows with evidence;
+the Critic's Observations; every non-silent skip (Axis B/C partial, UNVERIFIED
+references, cross-model unavailable, validation surface empty); the adversarial
+consolidation table; reader-test gaps (if run); the retry summary (from
+`runs.tsv` and the critique headers).
+
+**Literary**: the text that ships and the Proofreader's changes; the 3 most
+singular and 3 most generic passages (Critic Observations); tic counts and
+story-ledger/arc status from `checks.md`; the reader-journal entry for this
+chapter (and whether last chapter's predictions came true); 1–3 decisions for
+the human (key-scene pick, facts-lane questions, new characters). Verdict rows
+only when not PASS.
+
+Responses: **approve** (even over a red scorecard — record why in
+`human-notes.md` — but **never over a story block**: R1–R4 are not
+overridable) → `python scripts/pipeline_step.py approve unit-NN` copies
+`proofread.md` to `final/unit-NN.md` with HTML comments stripped (nonfiction
+keeps `SOURCE`/`ARTIFACT` markers; it refuses a `proofread.md` older than
+`humanized.md` and, literary, a failing `ready` or any blocking
+`check_story.py --unit` finding on `proofread.md`, `--force` included) → CG
+Mode B → digest → (literary) append
+the Reader-POV journal entry to `bible/reader-journal.md` → archive. Never copy
+by hand.
+**Reject with notes** → dated entry in `human-notes.md`, routed to the agent
+the human names (Writer by default), counts against the cap. **Defer** →
+nothing runs.
 
 ## Digests
 
-Past unit 4–5 of a sequential project, re-reading every prior unit on every
-turn is context bloat. After approval (post-Proofreader, post-Mode B, before
-archiving), produce a 300–500-word structured digest per
-`references/chapter-digest.md` into `bible/digests/`.
+After approval, CG Mode B, then the digest (orchestrator, bracketed as agent
+`digest`) into `bible/digests/`: `references/chapter-digest.md`, template
+`templates/chapter-digest.md` (nonfiction) or
+`templates/chapter-digest-literary.md`. No voice samples — the Writer must not
+calibrate against neighbours.
 
-Policy by sequence type (declared in the profile):
-
-| Sequence | Profiles | Digest policy |
+| Sequence | Profiles | Policy |
 |---|---|---|
 | linear | book-technical, book-literary | Full digest per unit |
-| linear-light | corporate-guide | Full digest per unit — units open self-contained, but terminology and decisions still accumulate |
-| modular | product-docs | **No digests.** Articles are standalone; cross-article consistency is the KG terminology layer + the Phase 4 audit |
-| imrad | scientific-paper | Short claims-state digest per section: claims introduced, evidence status, what downstream sections may rely on |
-
-Who reads digests vs. full prior units:
+| linear-light | corporate-guide | Full digest; units still open self-contained |
+| modular | product-docs | No digests (frontmatter + KG terminology) |
+| imrad | scientific-paper | Claims-state snapshot per section |
 
 | Agent | Digests | Full prior units |
 |---|---|---|
-| Writer | All | Most recent only (continuity, not voice) |
-| Technical Reviewer | All | Most recent only, if a terminology audit needs it |
-| Editor | — | — |
-| Humanizer | Most recent | — (voice comes from voice-profile.md) |
-| Reader-POV | — | — (cold-read simulation) |
+| Writer | All | Most recent only — continuity, not voice |
+| Technical Reviewer | All | Most recent, when a terminology audit needs it |
+| Editor, Reader-POV, Proofreader | — | — |
+| Humanizer | Most recent | — |
 | CG Mode A | All | Most recent 1–2 |
-| Critic | All | — (`coherence.md` carries cross-unit findings) |
-| CG Mode B | All | All finals, on scheduled audits only |
+| Critic | All | — |
+| CG Mode B | All | All, on scheduled audits only |
 
-Digests freeze at approval. Disable globally with
-`pipeline.chapter_digest.enabled: false` for short projects.
+Disable with `pipeline.chapter_digest.enabled: false` for short projects.
 
 ## Archiving
 
-After approval + Proofreader + Mode B + digest, move `drafts/unit-NN/` to
-`drafts/_archive/unit-NN/`. Re-open handling, timestamped re-archives, and
-the disable flag are in `references/archiving.md`.
-
----
+After the digest (and reader-journal update), move `drafts/unit-NN/` to
+`drafts/_archive/unit-NN/`: `references/archiving.md`.
 
 ## Runs log
 
-After each agent run, the **orchestrator** (the session driving the
-pipeline — never the agents themselves) appends one line to
-`project-status.yaml → runs`:
-
-```yaml
-- [unit-07, writer, creative, 2, 2026-07-03T14:02Z]
-#  unit     agent   tier      cycle timestamp
-```
-
-That is the entire contract. Token accounting is deliberately absent: richer
-per-call token rows proved unenforceable — they were specified and never
-reliably populated, producing a log that looked like observability but
-wasn't. A minimal log that actually gets written beats a detailed one that
-is fiction. The log feeds the retry summary in the human packet and lets the
-human spot roles that loop repeatedly or are not earning their tier.
-
----
+`runs.tsv` at the project root, one line per agent run, written **only** by
+`pipeline_step.py done`: `unit agent tier cycle timestamp_utc output_bytes`.
+It feeds the retry summary. `project-status.yaml` keeps phase, retries and
+waivers, not the log.
 
 ## Model tiers
 
-`bible/meta.yaml → models` maps roles to **tiers**, never to model IDs:
+`models.roles.<role>` names a tier; `models.tiers.<tier>` is `inherit` (session
+model, no override) or a model ID. Role keys: `writer`, `technical_reviewer`,
+`editor`, `humanizer`, `reader_pov`, `critic`, `continuity_guardian`,
+`proofreader`, `adversarial`; anything else → `roles.default`. Model IDs live
+only on a project's tiers, never in skill files.
 
-```yaml
-models:
-  tiers:
-    creative: inherit    # inherit = whatever model this session runs
-    audit: inherit
-  roles:
-    writer: creative
-    critic: creative
-    humanizer: audit     # literary projects: creative — voice is the product
-    default: audit
+## Batch passes over approved units
+
+Edits proposed by a batch pass are **anchor edits**, never unified diffs:
+`proposed-edits.yaml` = `[{unit, find, replace, rule}]`, each `find` matching
+exactly once in `final/unit-NN.md`. The human accepts all, some or none; then
+`python scripts/pipeline_step.py apply-edits <file> --dry-run`, then without
+`--dry-run`. A batch with any non-matching `find` fails whole. Literary: the
+batch also fails whole — nothing written — when `ready` fails or any edited
+unit, as it would be written, carries a story block (`check_story.py --unit`
+blocking, `lint_fiction.py` `unknown_name` major or `mentioned_on_stage`).
+
+### Polish pass
+
+Nonfiction, Phase 4. On by default in `fast`, ignored in `full`. Per batch of
+3–4 approved units (consecutive; product-docs: a tag cluster): Reader-POV batch mode reads the finals as a reader (HTML comments
+ignored, no digests) → `drafts/_polish/batch-NN-MM/reader-report.md`; the
+Humanizer, batch mode (`references/agents/humanizer-nonfiction.md` § Batch
+mode), proposes cross-unit fixes (a tic once per unit is a pattern across
+four) → `proposed-edits.yaml`. Skip when fewer than 3 units were
+approved since the last batch. Disabling it needs a `waivers` entry. Acceptance
+below ~30% across batches means noise: widen the trigger or turn it off.
+
+### Tic pass
+
+Literary, every `literary.tic_pass_every` approved chapters and once over the
+tail in Phase 4:
+
+```bash
+python scripts/lint_fiction.py --book --json drafts/_polish/tics-NN/lint.json
 ```
 
-Resolution: look up the agent in `models.roles` (recognized keys: `writer`,
-`technical_reviewer`, `editor`, `humanizer`, `reader_pov`, `critic`,
-`continuity_guardian`, `proofreader`, `adversarial`; fall back to
-`roles.default`) → that names a tier → `models.tiers.<tier>` resolves to
-`inherit` (session model) or an explicit model ID.
+Then the Humanizer (literary,
+batch mode — `references/agents/humanizer-literary.md` § Tic pass) proposes
+`proposed-edits.yaml` for gesture tics, repeated n-grams, paragraph openers and
+opening repeats across chapters.
 
-Set an explicit ID on a tier only when the human wants cost control — e.g.,
-a cheaper model on `audit` after a few units show the audit roles don't need
-the heavyweight one. Never write model IDs into skill references, templates,
-or agent instructions: model names churn, and a skill with IDs scattered
-through it rots in months. The tier indirection is the single place IDs may
-appear, and only in the project's own `meta.yaml`.
+### Fix-then-verify
 
----
+Every accepted fix batch (polish, tic, gate fix pass, late edit):
 
-## Human review (the real gate)
+1. apply the edits;
+2. nonfiction: the Technical Reviewer in fix-verify mode over the changed spans
+   only (`references/agents/technical-reviewer.md` § Fix-verify mode) →
+   `fix-verify.md` beside the edits file; literary: `lint_fiction.py --unit`
+   and `check_story.py --unit` on each changed unit;
+3. `python scripts/validate_claim_index.py` (claim-index projects) — its
+   `PROPAGATE` lines go to the human with the result;
+4. CG Mode B on each changed unit. Digests are not regenerated.
 
-A Critic PASS does not ship a unit. Present to the human, together:
-
-- **The unit text** — `drafts/unit-NN/humanized.md`, always. The Critic
-  gated this exact text; the human reviews the same.
-- **The computed verdict** from `critique.md`, plus the failing scorecard
-  items from `scorecard.yaml` with their `evidence` fields. The scorecard is
-  the load-bearing artifact — the human reviews a checklist, not a narrative.
-- **The Critic's Observations** — non-rubric notes worth flagging.
-- **`tech-review.md`** (nonfiction), with any skipped-check or
-  partial-grounding notes made explicit — never silent.
-- **`coherence.md`** and, when it ran, **`reader-report.md`**.
-- **`adversarial-report.md`** if the slot ran.
-- **Retry summary**: cycles used, target per cycle, what changed — from
-  `project-status.yaml → retries` and the unit's `runs` lines.
-
-The human has three responses:
-
-- **Approve** → Proofreader → Continuity Guardian Mode B → digest
-  (sequential profiles) → archive. The unit lands in `final/unit-NN.md`.
-- **Reject with notes** → routed to the agent the human names (Writer by
-  default). Counts against the retry cap; the counter resets only via the
-  cap-hit escalation packet.
-- **Defer** → unit stays in draft; nothing runs automatically.
-
-Do not gate approval on a green scorecard. It is decision support, not
-authority: the human may approve over `significant` fails (record the
-rationale in the approval note) and may reject a PASS with a free-form note
-that becomes the next cycle's instruction.
-
----
-
-## Polish pass (Phase 4, nonfiction)
-
-A batch pass over already-approved units, run in Phase 4 after the
-full-manuscript audit and Proofreader steps. Default: enabled for `fast`
-mode, ignored for `full` (Reader-POV already ran per unit), never for
-literary (its per-unit pipeline already carries both agents). Skip when fewer
-than 3 units were approved since the last run — the cross-unit signal is too
-thin.
-
-Disabling it with `pipeline.polish_pass.enabled: false` requires a `waivers`
-entry in `project-status.yaml`. In `fast` mode this pass is Reader-POV's only
-per-batch appearance, so switching it off silently means a book gets written
-without ever being read as a reader — which is exactly what happened once, for
-three months, while the project reported itself finished. The whole-book read at
-the Phase 4.5 gate still runs regardless; it is not skippable, and it is not a
-substitute for this one (batch reading catches tics and pacing; the whole-book
-read catches exposition order and sufficiency).
-
-Why it exists: in `fast` mode this is Reader-POV's first read; and the
-per-unit Humanizer sees one unit at a time, so a tic appearing once per unit
-passes as `minor` each time while being a `significant` pattern across four
-units — visible only at batch level (same for emphasis density, signposting
-cadence, synonym cycling on load-bearing terms).
-
-For each batch of 3–4 approved units (consecutive for sequential profiles;
-for `product-docs`, a cluster of related articles by tag or topic):
-
-1. **Reader-POV, batch mode** — reads the batch as one continuous read using
-   the profile's persona; loads meta and the batch's outline entries, no
-   digests (fresh-reader simulation). Flags units that drag, concepts that
-   were supposed to land earlier and didn't, batch-level pacing. Output:
-   `drafts/_polish/batch-NN-MM/reader-report.md`.
-2. **Humanizer, batch mode** — reads the batch + the batch reader report +
-   style-guide + voice-profile + anti-mediocrity-nonfiction. Re-runs its
-   checklist with cross-unit awareness. Output: proposed line-level edits as
-   a unified diff, `drafts/_polish/batch-NN-MM/proposed-edits.diff`.
-
-**Edits are proposed, never applied.** The human reviews the diff:
-accept-all, partial, or reject. Accepted edits update `final/unit-NN.md` in
-place; CG Mode B re-runs on any changed unit. Digests are NOT regenerated —
-they are writing-time calibration artifacts and the writing is done.
-
-**After any accepted edit, run `python scripts/validate_claim_index.py`.** Its
-`PROPAGATE` lines go into the same packet as the diff, so the person who just
-accepted an edit sees immediately which sibling passages it orphaned. This is the
-step whose absence produced three separate incomplete fixes in one project, the
-longest surviving seventeen days and a full audit — nobody knew the edited
-passage had siblings. See `references/claim-index.md`.
-
-The pass does not re-run the Critic (the units are approved; this is voice
-and pacing, not a gate) and does not touch the KG, glossary, or scope —
-vocabulary changes are the human's call. If the human's acceptance rate
-drops below ~30% across a few batches, the pass is generating noise: tighten
-the trigger to 5+ units or disable it for this project.
-
----
+A fix is closed only after step 2 passes. Why:
+`docs/rationale/pipeline.md#fix-regressions`.
 
 ## See also
 
-- `references/rubric.md` — scorecard schema and the authoritative verdict
-  computation.
-- `references/validation-surface.md` — Axis A/C machine checks.
-- `references/adversarial-verify.md` — skeptic protocol.
-- `references/loopback-handoff.md` — cap-hit escalation packet.
-- `references/chapter-digest.md`, `references/archiving.md` — post-approval.
-- `references/agents/continuity-guardian.md` — Mode A/B detail, singularity
-  audit, Phase 4 full-manuscript audit.
-- `references/manuscript-gate.md` — **Phase 4.5**, which fires automatically
-  when the last unit is archived. Nothing in this file gates the book; it gates
-  units. The gate is there.
-- `references/claim-index.md` — the propagation warning that runs after any
-  edit to an approved unit.
+`references/rubric.md` · `references/adversarial-verify.md` ·
+`references/loopback-handoff.md` · `references/chapter-digest.md` ·
+`references/archiving.md` · `references/manuscript-gate.md` (Phase 4.5 — the
+book-level gate; this file gates units) · `references/claim-index.md`.

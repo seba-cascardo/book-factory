@@ -1,137 +1,166 @@
 # Profile: book-literary
 
-Literary fiction and narrative prose: novels, short-story cycles, memoir,
-creative nonfiction with a narrative spine. Voice is the product — the
-pipeline optimizes for a text only this narrator could have written, not
-merely a correct one. Every agent loads this file at the start of its turn,
-then `bible/meta.yaml`, then (prose agents) `bible/voice-profile.md`.
+Novels, story cycles, memoir, narrative nonfiction. The story is the engine
+and the voice is the product. Every agent loads this file after its agent
+file, then `bible/meta.yaml` (its `literary:` block), then — prose agents —
+`bible/voice-profile.md`.
 
-## Unit
+## Unit and sequence
 
-The unit is a **chapter**. Files use `unit-NN`; always say "chapter" when
-talking to the human.
+Unit = **chapter**; files stay `unit-NN`. Sequence `linear`: write in outline
+order. Digests on, from `templates/chapter-digest-literary.md` (story state
+only, no voice samples). No knowledge graph: `bible/plot-structure.md`,
+`arcs.md`, `timeline.md`, `story-ledger.yaml` and the character sheets carry
+that role.
 
-## Sequence
+## The four rules — no per-project waiver
 
-`linear`. Consequences:
+- **R1 — every character has an arc.** Every character (role `protagonist`,
+  `principal`, `secondary`) has a complete sheet (`templates/character-sheet.md`):
+  backstory, personality, contradiction, want, need, voice, and arc (type,
+  start, end, ≥ 1 turning point assigned to a unit, `resolves_in`). A `flat` arc
+  is legal and names what the character's constancy `tests`. No `TBD`; the
+  template lists the placeholder values that count as empty (`N/A`, `x`,
+  `(pendiente)`, `{{…}}` included), and the narrative fields need at least three
+  words. A sheet is complete only when the human approved it and the
+  orchestrator ran `python scripts/pipeline_step.py sign <slug> --by <human>`
+  (`signed_on`, `signed_hash`); any later change to its content is
+  `CHAR-UNSIGNED-CHANGE` until the block is re-run and the sheet re-signed.
+- **R2 — the story has an ending** before drafting: `ending.resolution`,
+  `ending.answer` (to the dramatic question) and `ending.final_unit` in the
+  front matter of `bible/plot-structure.md`. Every arc resolves at or before
+  `final_unit`.
+- **R3 — no drafting until R1 and R2 hold for everyone in the outline.**
+  `python scripts/pipeline_step.py ready` must exit 0 before `phase: drafting`,
+  and it is re-checked at every step that drafts or ships text: `check unit-NN
+  writer` and `done unit-NN writer` (the full `ready` result, not only the
+  unit's cast), `approve` and `apply-edits`. If the human asks to start anyway,
+  explain the rule and run the questionnaire for what is missing: short answers
+  are fine, empty ones are not.
+- **R4 — characters may join mid-book; the questionnaire runs again.**
+  Triggers: the human or the Writer proposes one; the outline gains a name
+  (`characters_present` or a scene card: `CHAR-UNKNOWN`); `check_story.py` or
+  `lint_fiction.py` reports `NEW-CHARACTER` / `unknown_name` (a name
+  mid-sentence, one that is no common word and never lowercase — "Gustavo
+  no saludó." counts — or one in a speaker/actor position: "—dijo el viejo
+  Gustavo", "Gustavo, con las manos en los bolsillos, dijo…", "Entró Gustavo";
+  italics, ALL CAPS, internal capitals, section headings and table cells are
+  scanned too) or `EXTRA-PROMOTE` / `mentioned_on_stage`. An ordinary
+  word misread as a name (a first-person verb opening a sentence) goes in
+  `bible/lexicon.yaml → common_words`; a name never does — mid-sentence it is
+  caught whatever the list says. The unit pauses; the orchestrator first asks
+  the human, per flagged token, "is this a person?" (no → `common_words`,
+  re-run; a public figure seen from a distance, never in a scene with the
+  characters → `non_person_names`, re-run; a person in the story →) runs
+  `references/character-questionnaire.md` with the human; sheet, arcs, outline
+  and ledger are updated; the human signs; the unit restarts at the Writer.
+  **The Writer never invents a named character.**
 
-- **Digests on.** After approval, write the chapter digest to
-  `bible/digests/`: plot state, character states, open plants/payoffs, a
-  voice-calibration note. From unit 6 onward, agents read all digests plus
-  only the immediately preceding chapter in full.
-- **No knowledge graph.** `bible/plot-structure.md`, `arcs.md`,
-  `timeline.md`, and the character sheets carry the dependency role that
-  the KG plays in nonfiction.
-- **Setups and payoffs are tracked**, not free. A plant (object, secret,
-  wound) goes into `bible/continuity-tracker.md` when planted and stays
-  open until paid off; the Continuity Guardian audits both directions.
-- **Write in outline order.** Tension architecture depends on it.
+**Extras.** Unnamed incidental figures seen in one unit at most live in
+`bible/characters/_extras.md` (`templates/extras.md`). A name or a second unit
+makes them characters (R4); a label adds no known name, so a label word used
+as a name on the page is `EXTRA-PROMOTE`. People only mentioned, never on
+stage, are listed in `bible/world.md` § Names; places, institutions and brands
+in its other sections; the outline's `location` words count as places. ANY of
+these — a § Names entry, a place, a location word — that speaks or acts on the
+page is a person (`EXTRA-PROMOTE`: a "place" that speaks is a person), and a
+§ Names entry in a scene card is a character (R4). Every file in
+`bible/characters/` except `_extras.md` is a sheet with valid front matter, a
+role and its own slug — a broken or role-less file cannot make a name known.
+No waiver, human approval or override passes a story block. Why:
+`docs/rationale/literary.md#enforcement-holes`.
 
-## Pipeline
+**Known gap (documented, not fixed).** A name that is also a common noun
+(Luz, Paz, Consuelo), used only sentence-initially and never in a
+speaker/actor position while the noun is written in lowercase elsewhere ("Luz
+era la hija de Rosa." next to "no había luz"), reads as the noun and is not
+flagged. The semantic backstop is the Critic's `character-3` (every named
+person on stage has a sheet) and CG Mode A (continuity against the sheets).
+Code fences are not prose and are not scanned.
 
-The literary pipeline — no Technical Reviewer, no fast/full split:
+## Pipeline (per chapter)
 
 ```
-Writer → Editor → Humanizer → Reader-POV → Critic (GATE)
-  → [Adversarial Verify: if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian → digest → archive
+Writer (scene by scene) → [human picks key-scene version] → Editor (assembly)
+  → Humanizer → Reader-POV → CG Mode A (literary) → checks → Critic
+  → [Adversarial] → Proofreader → Human review
+  → (approve) `pipeline_step.py approve` → CG Mode B → digest → reader-journal update → archive
 ```
 
-Humanizer and Reader-POV run every chapter; deferring either leaks generic
-prose into approved chapters, and approved chapters are expensive to reopen.
-Retry cap: 3. Model roles: `humanizer: creative` is the default here —
-line-level voice work is creative work in this profile, not audit work.
+Dispatch, `pipeline_step.py` brackets, isolation, loops, retry cap (3) and the
+plateau rule: `references/pipeline.md`. Literary specifics:
 
-## Register
+- `pipeline_step.py check unit-NN writer` requires the full `ready` result
+  (R3) and runs `check_story.py --unit`; a blocker stops the unit. `done
+  unit-NN writer` re-checks both on the draft (exit 3 = pause). The Critic and
+  the Proofreader refuse a `checks.json` computed on another text
+  (`source_sha1`) and re-run the story check live.
+- The literary reader reads `humanized.clean.md` (`pipeline_step.py clean`),
+  never the outline, and re-runs after every Editor or Humanizer loopback.
+- `key_scene: true` → `literary.key_scene_versions` divergent versions; the
+  human picks before the Editor.
+- On approval `python scripts/pipeline_step.py approve unit-NN` copies
+  `proofread.md` to `final/` with every HTML comment stripped: a novel ships
+  no SCENE markers, flags or logs. It refuses while `ready` fails or the text
+  carries a story block.
+- On approval the orchestrator appends the Writer's declared extras to
+  `_extras.md` and the reader's § Journal update to `bible/reader-journal.md`.
+- `models.roles.humanizer: creative`.
 
-Defined entirely per project: POV, tense, prose register, dialogue
-conventions, metaphor policy live in `bible/style-guide.md`; the fingerprint,
-banned traits, and budgets live in `bible/voice-profile.md`. This profile
-imposes no register of its own — literary registers are too diverse for
-defaults, and a default register here would manufacture the same
-competent-generic narrator in every project. The universal floor is
-`references/anti-mediocrity-literary.md`.
+## Human packet
 
-## Openings and closings
+Short, in this order: the chapter exactly as it will ship, with the
+Proofreader's diff; the 3 most singular and 3 most generic passages (Critic
+Observations);
+tic counts (`checks.md`); the journal excerpt (predictions scored, forward
+pull, pairwise note); failing scorecard rows; 1–3 decisions (unverifiable
+facts, WRITER NOTEs, VOICE-RISK calls). Everything else is linked, not pasted.
+Rejection notes go, dated, to `drafts/unit-NN/human-notes.md`.
+Why: `docs/rationale/literary.md#human-taste`
 
-- **Openings**: rotation per `bible/voice-profile.md` (3–4 structures chosen
-  at setup — e.g., in-media-res action, dialogue, interiority, sensory
-  scene-setting). `rhet-6` applies: the same structure may not open two
-  consecutive chapters. The Writer declares its choice in the
-  self-assessment; the Critic verifies.
-- **Closings**: follow the outline's beat, nothing else. There is NO
-  "end with forward momentum" rule — mandated momentum produces mechanical
-  chapter-end hooks, a formula readers learn to see through. A quiet ending
-  that the outline calls for outranks a manufactured one. `rhet-2` guards
-  the "not X but Y" reflex at climactic moments, where it clusters.
+## Periodic passes
 
-## Citation policy
+- **Tic pass**, every `literary.tic_pass_every` (default 3) approved chapters:
+  `lint_fiction.py --book` → Humanizer batch mode
+  (`references/agents/humanizer-literary.md` § Tic pass) → the human accepts →
+  `pipeline_step.py apply-edits` (refused, nothing written, if `ready` fails or
+  an edited unit would carry a story block — a tic pass cannot add a name) →
+  fix-then-verify (`references/pipeline.md`).
+- **Singularity audit** every 5 approved chapters (Continuity Guardian).
+- **Manuscript gate**: `references/manuscript-gate-literary.md`.
 
-`n/a`. No grounding library, no SOURCE comments, no Technical Reviewer.
-Factual texture (period detail, craft knowledge, geography) is the human's
-call during setup and outlining; record research decisions in
-`bible/world.md` so agents stop re-litigating them. If the human wants a
-fact verified, that is a request to the human's own research, not a pipeline
-stage.
+## Facts
 
-## Running example
+`literary.fact_check: realistic` → CG Mode A's facts lane checks every
+verifiable real-world detail (dates and weekdays, results, geography, prices,
+public events). `invented` → `bible/world.md` declares the world fictional and
+the lane is off. Research decisions live in `world.md` so agents stop
+re-litigating them. No SOURCE comments, no running example.
 
-`n/a` — a nonfiction device. The equivalent continuity load is carried by
-the continuity tracker, character sheets, and timeline.
+## Register, openings, closings, risk
 
-## Literary package (always on)
-
-Seven hooks against competent-generic prose. Each is enforced where noted;
-this profile activates all of them.
-
-1. **Friction inventory** — before drafting, the Writer declares per scene
-   of 300+ words: what the POV wants, what opposes it, where it pivots.
-   A scene without friction drafts as summary. Missing inventory → `craft-5`
-   (significant). See `references/agents/writer-literary.md`.
-2. **Exposition beats marked in outline** — beats are `scene` or
-   `exposition-within-scene`; the latter carry an instruction to put the
-   information into action. Unloading it as informative dialogue → `craft-1`
-   (significant). See `references/outlining.md`.
-3. **Pause vs pausing** — a structural pause needs an interruption or a
-   change of internal state; sensory anchors alone are scenery, not a beat.
-   Enforced by the Editor and `craft-2` (significant).
-4. **Secondary characters** — anyone appearing twice or more gets at least
-   one line that is unmistakably theirs. `craft-3` (minor; significant on
-   repeat across units). Wired in during outlining.
-5. **Voice-risk quota** — the Writer takes 1 deliberate risk per chapter,
-   flagged `<!-- VOICE-RISK: ... -->` in the draft. The rubric cannot fail a
-   flagged risk on its own; the Critic comments on it (`craft-4`). Without a
-   protected slot for risk, gates sand off everything distinctive.
-6. **Conservative Humanizer** — contract: preserve, don't improve. A line
-   that violates neither anti-mediocrity nor style-guide nor voice-profile
-   stays. Weak beats per the reader-report get 2–3 flagged alternatives, not
-   a unilateral rewrite. Hard stop: about to touch >3% of the words → halt
-   and flag the Critic. See `references/agents/humanizer-literary.md`.
-7. **Singularity audit** — every 5 approved chapters, the Continuity
-   Guardian does a cold read with proper nouns masked: did this narrator
-   write it, or "a good generic writer of this register"? Output is
-   advisory — the 2–3 most singular and most generic passages — so the
-   human can recalibrate voice-profile.md.
+Register is per project (`bible/style-guide.md`, `bible/voice-profile.md`);
+the floor is `references/anti-mediocrity-literary.md`. No opening rotation:
+`rhet-6` does not apply; `lint_fiction` `opening_repeat` is an observation.
+Closings follow the outline beat — no "end with momentum" rule. VOICE-RISK is
+optional, 0–2 per chapter, logged in the digest so the human sees whether the
+risks keep taking one shape. Why: `docs/rationale/literary.md#quotas-removed`
 
 ## Rubric deltas
 
-Use the literary rubric in `references/rubric.md` § Literary — families
-`beats`, `character`, `arc`, `voice`, `craft` (craft-1..5 above),
-`reader_pov`, `continuity`. Of the `rhet` family only `rhet-2` and `rhet-6`
-apply; the rest target nonfiction tics. Verdicts are computed from
-`drafts/unit-NN/scorecard.yaml` — same schema as every profile.
+None: the families live in `references/rubric-literary.md` (`beats`,
+`character`, `arc`, `ending`, `voice`, `craft`, `format`, `reader_pov`,
+`continuity`; `rhet-2` only), scored with full-mode tolerance.
 
 ## Reader-POV persona
 
-Simulate the reader in `meta.yaml → target_reader`, aiming at
-`desired_reader_experience`. Report immersion breaks, confusion, and where
-attention drifts — as that reader, who has read widely in the genre but has
-never seen the bible and does not load anti-mediocrity. Real readers don't
-have a checklist; they have taste.
+The reader in `meta.yaml → audience.primary`, who is tired of
+`audience.known_frustrations`, reading as `literary.reader_profile` says
+(`holistic`: character, subtext, language; `surface`: plot and pace). Widely
+read in the genre; has seen no bible, no outline, no checklist.
 
 ## Build targets
 
-Phase 5 (`references/build-export.md`): **EPUB / PDF / DOCX**, via pandoc or
-the docx/pdf skills when available. Output to `build/`. Confirm with the
-human: trim/format conventions, scene-break glyph, chapter title pages,
-front and back matter.
+Phase 5 (`references/build-export.md`): EPUB / PDF / DOCX into `build/`.
+Confirm with the human: trim and format, scene-break glyph, dialogue
+punctuation, chapter title pages, front and back matter.

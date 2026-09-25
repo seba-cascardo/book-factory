@@ -1,0 +1,16 @@
+# Fixture — small technical project with a grounding library.
+schema_version: "3.4"
+project:
+  profile: "book-technical"
+  title: "Qlik load scripts"
+  language: "en"
+  language_variant: "en-US"
+conventions:
+  code_language: "qlik"
+validation_surface:
+  identifier_allowlist: ["vCurrentYear"]
+  surfaces: []
+structure:
+  unit_length_target_words: 400
+pipeline:
+  mode: "fast"

@@ -1,155 +1,126 @@
 # Profile — scientific-paper
 
-Every agent loads this file at the start of its turn. Where it conflicts
-with a general reference on register, structure, or citation handling, this
-profile wins.
+Every agent loads this file after its own. Where it conflicts with a general
+reference on register, structure or citation handling, this file wins.
 
 ## 1. Unit
 
-The unit is a **section** — one IMRaD component per unit (Abstract, Intro,
-Methods, Results, Discussion; plus Related Work, Limitations, Conclusion
-where the venue expects them). Files use `unit-NN`; say "section" to the human.
+A **section** — one IMRaD component per unit (Abstract, Introduction, Methods,
+Results, Discussion; Related Work, Limitations, Conclusion where the venue
+expects them).
 
 ## 2. Sequence: imrad
 
-The outline fixes the WRITING order — not the reading order:
-**Methods → Results → Introduction → Discussion → Abstract last.**
+The outline fixes the **writing** order: **Methods → Results → Introduction →
+Discussion → Abstract last.** Methods and Results are written from the data,
+with no rhetoric; the Introduction's framing depends on the results actually
+obtained; the Abstract can only be honest once everything else is final.
+Reject other orders.
 
-Why this order: Methods and Results describe what was actually done and
-found — they can be written from the data with no rhetoric. The Intro's
-framing (the gap, the contribution claims) depends on the results actually
-obtained; written first, it commits the paper to promises the results may
-not keep. The Abstract summarizes what exists, so it can only be honest
-once everything else is final. Reject other orderings.
-
-- Numbered cross-references between sections are normal, in both directions
-  ("see Section 4") — readers of papers do not read linearly.
-- Digests: claim-centric, not prose summaries — each approved section's
-  digest records which claims-map entries it used and their status.
-- Knowledge graph: mandatory (notation, defined terms, method names).
+- Numbered cross-references between sections are normal, in both directions.
+- Digests are claims-state snapshots (`references/chapter-digest.md`).
+- Knowledge graph mandatory (notation, defined terms, method names); forward
+  references run on reading order.
 
 ## 3. Register
 
-Sober academic. The paper persuades with evidence and precision, never with
-rhetoric — any sentence that works harder than its evidence is a defect.
-Prohibited:
+Sober academic: evidence and precision, never rhetoric. Prohibited:
 
-- Rhetorical questions — budget is **0** (`rhet-1` tightened, significant).
-- Suspense, cliffhangers, narrative hooks, scene-setting anecdotes.
-- Self-praising adjectives ("remarkable", "striking", "novel") unless the
-  quantity that earns them appears in the same sentence.
-- Claims stated stronger than their claims-map entry. If the map says
-  "improves X on dataset Z", the prose cannot say "improves X".
-- Motivational framing; addressing the reader as "you".
+- rhetorical questions (`rhet-1` quota 0);
+- suspense, hooks, scene-setting anecdotes;
+- self-praising adjectives ("remarkable", "novel") unless the earning quantity
+  is in the same sentence;
+- claims stronger than their claims-map entry ("improves X on dataset Z" never
+  becomes "improves X");
+- motivational framing; addressing the reader as "you".
 
-Person and voice ("we" vs. passive) follow the venue convention in `meta.yaml`.
-The Humanizer runs every section: it strips AI-isms, enforces this register,
-and applies Reviewer advisories — de-embellishing, not enlivening.
+Person and voice follow the venue (`meta.yaml`). The Humanizer de-embellishes;
+it never enlivens.
 
 ## 4. Openings and closings
 
-Each section opens by doing its conventional IMRaD job in the first
-paragraph — Methods states what was done, Results what was found — no
-warm-up. The opening-rotation rule (`rhet-6`) does NOT apply: IMRaD
-convention fixes each opening; rotating for variety would be a defect.
-
-Closing policy: **none**. A section ends when its content ends — no recap,
-no bridge, no teaser. The Discussion may end with implications and future
-work because that is its content, not a flourish.
+Each section opens by doing its IMRaD job in the first paragraph — no warm-up,
+no rotation (`rhet-6` and `profile-3` are `not_applicable`). Closing policy
+**none**; the Discussion may end with implications and future work because
+that is its content.
 
 ## 5. Citation policy: visible-academic
 
-This INVERTS the invisible-citation rule used by the other profiles:
+Citations appear in prose per `meta.yaml → citation_style` (apa | ieee |
+vancouver | author-year). Load-bearing citations also carry
+`<!-- SOURCE: source_id §locator -->` into `bible/sources/`: the visible
+citation serves the reader, the comment tells the Reviewer which file backs the
+claim.
 
-- Citations appear **in the prose**, formatted per
-  `meta.yaml → citation_style: apa | ieee | vancouver | author-year`.
-- Load-bearing citations ALSO carry the pipeline's HTML comment,
-  `<!-- SOURCE: source_id §locator -->`, pointing into `bible/sources/`.
+## 6. Claims and numbers — `bible/claims-map.yaml`
 
-Why both: the visible citation serves the reader; the comment serves the
-Technical Reviewer. Formatted citations are ambiguous (author-year collisions,
-no file mapping) — the Reviewer never guesses which file backs a claim.
+Every claim maps to an entry (`templates/claims-map.yaml`): `external` (a
+citation grounded in `bible/sources/`) or `own-result` (an artifact plus the
+table or figure presenting it). Setup seeds the core claims; the Writer adds
+entries and `sections_used`; the Reviewer verifies and sets `status`
+(grounded | pending | unverifiable).
 
-## 6. Claims discipline — `bible/claims-map.yaml`
+**Number provenance.** Every number in the prose — Ns, means, effect sizes,
+p-values, percentages, hyperparameters — traces to a claims-map entry, a SOURCE
+comment, or an `<!-- ARTIFACT: path[#table|:line] -->` pointer to the file or
+script that produces it. An orphan number is hedged, cut, or recorded as a
+verification-plan item (`needs: runner | measurement`); it never ships as-is.
 
-Every claim the paper makes maps to an entry in `bible/claims-map.yaml`
-(template: `templates/claims-map.yaml`). Two types:
+## 7. Technical Reviewer — Axis C
 
-- `external` — evidence is a citation grounded in `bible/sources/`
-  (source_id + locator).
-- `own-result` — evidence is the project's own data: an artifact plus the
-  table or figure that presents it.
+Every visible citation: the work **exists**, it **supports** the sentence
+(topical overlap is not support), it is **not retracted**. Use Zotero,
+citecheck, arXiv or OpenReview tools when connected; otherwise verify against
+`bible/sources/` and flag each unresolvable citation `UNVERIFIED` in
+`tech-review.md` — the normal path when no tool connects, never a silent pass.
+The human decides whether unverified references block submission.
 
-Setup seeds the core claims. The Writer adds entries and updates
-`sections_used` while drafting; the Technical Reviewer verifies evidence
-and sets `status` (grounded | pending | unverifiable). A claim in prose
-with no entry, or `unverifiable` at gate time, is a rubric hit: hedge, cut,
-or gather evidence — never ship as-is.
+## 8. Limitations (critical)
 
-## 7. Technical Reviewer — Axis C: reference integrity
+The outline includes a Limitations section (standalone or in the Discussion).
+Naming limitations first is honesty and the cheapest defence; a list of only
+flattering limitations fails the same row.
 
-In addition to Axis A/B, the Reviewer verifies every visible citation:
+## 9. Methods reproducibility (significant)
 
-1. The cited work **exists** (not hallucinated; metadata correct).
-2. It **supports** the sentence citing it — topical overlap is not support.
-3. It is **not retracted**.
+Data availability (where, license, access); every parameter and
+configuration; software and library versions; seeds and run counts; hardware
+where it matters. Gaps are declared in the text, never omitted.
 
-Use Zotero / citecheck / arxiv / openreview MCP tools when connected.
-Otherwise degrade gracefully: verify against `bible/sources/` only, flagging
-every citation not resolvable there as `unverified` in `tech-review.md` —
-never a silent pass. The human decides if unverified refs block submission.
+## 10. Running example: off — the study is the through-line.
 
-## 8. Mandatory Limitations section (rubric critical)
+## 11. Rubric deltas
 
-The outline must include a Limitations section (standalone or inside the
-Discussion, per venue). Every referee hunts for limitations; naming them
-first is basic honesty and the cheapest defense. A section listing only
-flattering limitations fails the same item.
+Base `references/rubric-nonfiction.md`, with:
 
-## 9. Methods reproducibility checklist (rubric significant)
-
-Methods must let a competent reader reproduce the work. Verify: data
-availability (where, license, access procedure); all parameters and
-configuration; software and library versions; random seeds and run counts;
-hardware where it affects results. Gaps are declared in the text ("data
-available on request"), never silently omitted.
-
-## 10. Running example: off — the paper's own study is the through-line.
-
-## 11. Rubric deltas (see references/rubric.md)
-
-Base `profile-1/2/3` (register, citation policy, opening) apply as the
-universal spine. This profile ADDS items in its own `paper-*` id family
-(never reusing `profile-N` — see `references/rubric.md` § Profile compliance):
-
-- Add `paper-1`: Limitations present and substantive — critical.
-- Add `paper-2`: all prose claims map to grounded claims-map entries — critical.
-- Add `paper-3`: reproducibility checklist met or gaps declared — significant.
-- Add `paper-4`: citation format matches `citation_style` — minor
-  (Proofreader applies fixes mechanically).
-- Base `profile-3` (opening in rotation): `not_applicable` — the IMRaD
-  section openings are convention-fixed, not rotated (`rhet-6` dropped, §4).
-- `rhet-1` tightened to 0; exercise-related pedagogy items dropped;
-  `pedagogy-3` evaluates against closing policy `none`.
+- ADD `paper-1` (critical → Writer) — Limitations present and substantive.
+- ADD `paper-2` (critical → Writer) — every prose claim maps to a grounded
+  claims-map entry.
+- ADD `paper-3` (significant → Writer) — reproducibility checklist met or gaps
+  declared.
+- ADD `paper-4` (minor → Humanizer) — citation format matches `citation_style`
+  (the Proofreader fixes mechanical cases).
+- ADD `paper-5` (significant → Writer) — number provenance: no orphan number
+  (evidence: the count of numbers without an entry, SOURCE or ARTIFACT pointer,
+  from `tech-review.md`).
+- `rhet-1` quota 0; `rhet-6` and `profile-3` `not_applicable`; exercise items
+  dropped; `pedagogy-3` against closing policy `none`.
 
 ## 12. Reader-POV personas
 
-1. **Skeptical Reviewer 2** — reads to reject: overclaiming, missing
-   baselines or controls, ungrounded generalization, statistics that do not
-   support the stated effect, unacknowledged limitations.
-2. **Abstract-only reader** — reads only Abstract, figures/tables, and
-   conclusions. An abstract that oversells the Results is a hit.
+1. **Skeptical Reviewer 2** — reads to reject: overclaiming, missing baselines
+   or controls, ungrounded generalization, statistics that do not support the
+   effect, unacknowledged limitations.
+2. **Abstract-only reader** — Abstract, figures, tables and conclusions only;
+   an Abstract that oversells the Results is a hit.
 
 ## 13. Validation surfaces
 
-Typical: `citation_check`, `stats_check`, `proof_recheck`, `python_exec`
-(when analysis code ships). Declared in `meta.yaml →
-validation_surface.surfaces`; see `references/validation-surface.md`.
+Typical: `citation_check`, `stats_check`, `proof_recheck`, `python_exec` when
+analysis code ships (`references/validation-surface.md`).
 
-## 14. Build targets (Phase 5)
+## 14. Build targets
 
-LaTeX → PDF, using the venue template when provided in `bible/`. The `.bib`
-is generated from claims-map `external` entries joined with bibliographic
-metadata in `bible/sources/sources.md`. Every visible citation must resolve
-to a `.bib` entry; no `.bib` entry may be orphaned. See
-`references/build-export.md`.
+LaTeX → PDF with the venue template when provided; the `.bib` from claims-map
+`external` entries joined with `sources.md` metadata; no orphan citation, no
+orphan entry (`references/build-export.md`).

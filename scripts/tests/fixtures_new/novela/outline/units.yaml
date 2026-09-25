@@ -1,0 +1,58 @@
+units:
+  - unit: 01
+    title: "La casa"
+    pov: mariana
+    location: "Pichincha, Rosario"
+    characters_present: [mariana, tomas]
+    arc_moves: []
+    key_scene: false
+    target_words: 450
+    beats:
+      - id: s1
+        type: scene
+        summary: "Mariana llega a la casa; Tomás ya empezó a tirar cosas."
+        want: "Terminar rápido."
+        opposition: "Tomás quiere mirar cada objeto."
+        pivot: "Aparece la radio Spica."
+        value: {name: "control", from: "+", to: "-"}
+        crisis: "Tirar la radio o escuchar el sorteo."
+        ledger: {plants: [F01, F02], pays: []}
+  - unit: 02
+    title: "La libreta"
+    pov: mariana
+    location: "Pichincha, Rosario"
+    characters_present: [mariana, tomas]
+    arc_moves:
+      - {character: mariana, turning_point: 1}
+      - {character: tomas, turning_point: 1}
+    key_scene: true
+    target_words: 450
+    beats:
+      - id: s1
+        type: scene
+        summary: "En el placard aparece la libreta de apuestas."
+        want: "Entender los números."
+        opposition: "Tomás cambia de tema."
+        pivot: "Tomás admite que sabía."
+        value: {name: "confianza", from: "+", to: "-"}
+        crisis: "Pelear o preguntar."
+        ledger: {plants: [], pays: [F02]}
+  - unit: 03
+    title: "La boleta"
+    pov: mariana
+    location: "Pichincha, Rosario"
+    characters_present: [mariana, tomas, rosa]
+    arc_moves:
+      - {character: rosa, turning_point: 1}
+    key_scene: false
+    target_words: 450
+    beats:
+      - id: s1
+        type: scene
+        summary: "Rosa trae la última boleta; Mariana decide quedarse."
+        want: "Saber toda la verdad."
+        opposition: "Rosa no quiere hablar."
+        pivot: "Rosa entrega la boleta."
+        value: {name: "verdad", from: "-", to: "+"}
+        crisis: "Vender o quedarse."
+        ledger: {plants: [], pays: [F01]}

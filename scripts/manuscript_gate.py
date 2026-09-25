@@ -1,110 +1,266 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""manuscript_gate.py — Phase 4.5 orchestration and verdict computation.
+"""manuscript_gate.py — Phase 4.5: sweep, agent inputs, cumulative findings, verdict.
 
-What this does:
+What it does, per run:
 
-  1. Runs the deterministic checks (MG-5 render lint, claim-index validation,
-     MG-6 runner/waiver audit). Always over the whole book — they cost seconds
-     and they are what catches collateral damage from a fix.
-  2. Prepares the inputs the auditor agents need: concept dossiers, rule
-     candidates, and the GROUNDING.md that every auditor reads first.
-  3. Computes the propagation set for round 2+, so later rounds audit what
-     changed and its siblings rather than the whole book again.
-  4. Reads whatever findings JSON files exist and computes the gate verdict.
+  1. Deterministic sweep (always the whole book): rebuild manuscript.md, MG-5
+     render lint, claim index, anchors, MG-7 fixed defects; literary: MG-S
+     (`check_story.py --manuscript`) and MG-T (`lint_fiction.py --book`).
+  2. Prepare agent inputs (technical): MG-1 dossiers, MG-2 rule files, the
+     GROUNDING.md every auditor reads first.
+  3. Ingest every findings file of every round into `findings.jsonl` (content-keyed,
+     statuses open|fixed|refuted|accepted-risk) and every audit into
+     `subjects.json` (pending | audited@hash | sampled@hash).
+  4. Compute the verdict over ALL open findings, coverage, and convergence.
 
-What this does NOT do: spawn agents. Agent dispatch belongs to the session, not
-to a Python script. Run this, dispatch the auditors named in the output, then run
-it again with --verdict-only.
+It never spawns agents; the orchestrator dispatches what it lists, then re-runs
+with --verdict-only. See references/manuscript-gate.md.
 
-See references/manuscript-gate.md for the checks, the taxonomy and the loop.
+Literary (book-literary): MG-S cannot be switched off or waived, its findings
+cannot be resolved by hand (they close when the sweep stops reporting them), a
+missing or failing check_story.py is an ERROR, MG-4 and MG-C can be neither
+switched off nor coverage-waived and need two passes per manuscript hash, and
+convergence re-runs `check_story.py --manuscript` live — it must exit 0. Agent
+findings marked `rule: R1|R2` (an unresolved arc, an undelivered ending) close
+only through a re-audit of CHANGED text that no longer reports them — never
+through --resolve or a verifier's REFUTED. A round beyond `max_rounds` is refused.
+
+--resolve discipline (every profile). Deterministic findings (MG-5, MG-7,
+MG-S, MG-T) and configuration findings are never `fixed` or `refuted` by hand:
+they close when the sweep stops reporting them. `accepted-risk` only for a
+non-critical MG-5/MG-T or a minor MG-7. Agent findings (MG-1..4, MG-C): `fixed`
+needs a note AND evidence — the text the finding points at (its unit, or the
+manuscript for whole-book subjects) changed since the finding was recorded;
+`refuted` and `accepted-risk` need a note of 20+ characters that is not a
+placeholder; `accepted-risk` is never for a critical. Hand edits to
+findings.jsonl are re-validated on every run. state.json records every round's
+finding keys: a findings.jsonl missing keys an earlier round recorded is an
+ERROR ("findings store truncated").
+
+Waivers must say who, why and what is owed with real content: `waived_by`,
+`reason`, `debt` not placeholders, `reason` and `debt` 20+ characters.
+`rounds_without_new_to_close` below 2 is clamped to 2 (with a note). An
+executable validation surface is satisfied only by `evidence: <path>` naming an
+existing runner-output file — a runner string ("never run", "reviewer-only")
+is not evidence — or by a complete waiver with a plan entry.
+
+`project.profile` (stripped, lowercased) must name a known profile and
+`schema_version` must be "3.4": otherwise exit 2.
 
 Usage
-  python scripts/manuscript_gate.py --round 1
-  python scripts/manuscript_gate.py --deterministic-only
-  python scripts/manuscript_gate.py --round 2 --verdict-only
-  python scripts/manuscript_gate.py --root /book --units "final/ch-*.md" --round 1
+  python scripts/manuscript_gate.py --round 1                 # sweep + prepare + verdict
+  python scripts/manuscript_gate.py --round 1 --verdict-only  # after the auditors wrote files
+  python scripts/manuscript_gate.py --deterministic-only      # seconds; touches no round
+  python scripts/manuscript_gate.py --resolve KEY --status fixed --note "fixed in unit-07"
+
+Exit codes: 0 converged · 1 not converged · 2 ERROR (a tool failed, a findings file
+is invalid, the round was never swept, or a usage error).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import shutil
 import subprocess
 import sys
-from collections import Counter
-from dataclasses import dataclass, field
 from pathlib import Path
-
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    sys.exit("Missing PyYAML. Install with: pip install pyyaml")
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from bookkit.coverage import coverage_path, load_ledger, save_ledger  # noqa: E402
-from bookkit.project import Project, add_common_args, load_project  # noqa: E402
+from bookkit import lexicon as LX  # noqa: E402
+from bookkit.anchors import norm  # noqa: E402
+from bookkit.coverage import coverage_path, load_manifest, save_manifest  # noqa: E402
+from bookkit.placeholder import is_placeholder  # noqa: E402
+from bookkit.project import (  # noqa: E402
+    Project, add_common_args, as_list, load_project, natural_key, unit_number,
+)
+from bookkit.schema import load_schema, validate  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
+from bookkit.textmetrics import text_hash  # noqa: E402
 
-# D9 (omitted precondition) belongs here. Leaving it out would silently drop the
-# one defect class reviewers are already blind to — the failure would compound
-# rather than cancel.
 DEFECT_RELATIONS = {"D1", "D2", "D3", "D4", "D4a", "D5", "D6", "D7", "D8", "D9"}
 POSITIVE_RELATIONS = {"N1", "N2", "D7a"}
 BLOCKING = ("critical", "major")
+SEV_RANK = {"critical": 0, "major": 1, "minor": 2}
+STATUSES = ("open", "fixed", "refuted", "accepted-risk")
+COVERAGE_WAIVER = "manuscript_gate.coverage"
 
-# The checks whose coverage can be partial. MG-5 and MG-6 are deterministic and
-# always run over the whole book, so they have no coverage term.
-SEMANTIC_CHECKS = ("MG-1", "MG-2", "MG-3", "MG-4")
+TECHNICAL_CHECKS = ["MG-1", "MG-2", "MG-3", "MG-4", "MG-5", "MG-6", "MG-7"]
+LITERARY_CHECKS = ["MG-4", "MG-5", "MG-7", "MG-S", "MG-T", "MG-C"]
+AGENT_CHECKS = ("MG-1", "MG-2", "MG-3", "MG-4", "MG-C")
+NA_LITERARY = ("MG-1", "MG-2", "MG-3", "MG-6")
+TOOL_CHECKS = ("MG-5", "MG-7", "MG-S", "MG-T")
+RISK_OK = ("MG-5", "MG-T")                 # tool checks a human may accept as a (non-critical) risk
+LITERARY_ALWAYS_ON = ("MG-S", "MG-4", "MG-C")   # R1–R4 and the page-level ending/arc read
+STORY_RULES = ("R1", "R2")                 # agent findings about arcs / the ending (literary)
+MIN_NOTE = 20                              # characters of a refuted / accepted-risk note, a waiver's why
+MIN_ROUNDS_QUIET = 2
+PLAN_DEFAULT = "reviews/verification-plan/PLAN.md"
+NON_CODE_TAGS = {"text", "txt", "plain", "plaintext", "markdown", "md", "output", "log",
+                 "none", "nohighlight", "console-output"}
 
-# Coverage has two axes and they close by different work, so they waive
-# separately. BREADTH — subjects nobody opened — closes by spending rounds; the
-# emitters drain the pool automatically. DEPTH — subjects read only in part —
-# closes by narrowing them in `bible/rule-probes-tuned.yaml` or raising a
-# concept's `home_cap`, which is judgement about scope and cannot be automated.
-#
-# Collapsing them into one criterion made `PASS` unreachable by construction:
-# measured on the reference book, 221 of 454 rules were over the tractability
-# ceiling, so `sampled == 0` could never hold however many rounds anyone ran, and
-# every project would have ended at a standing waiver. That is the same decay
-# this design rejects for percentage floors.
-#
-# Both waivers carry a signature of the exact numbers, so one written against
-# 40/169 does not silently keep covering 12/169 three rounds later.
-COVERAGE_WAIVER = "manuscript_gate.coverage"   # breadth
-DEPTH_WAIVER = "manuscript_gate.depth"         # depth
+DEFAULTS = {"max_rounds": 5, "rounds_without_new_to_close": 2, "concept_min_units": 2,
+            "top_rules": 30, "top_concepts": 40, "passes_per_subject": 2}
 
-DEFAULTS = {
-    "max_rounds": 5,
-    "rounds_without_new_to_close": 2,
-    "concept_min_units": 2,
-    "top_rules": 30,
-    "top_concepts": 40,
-    "passes_per_subject": 2,
-}
+# Sweep outputs, deleted before every sweep so a crashed tool can never be read
+# through a stale file from an earlier run.
+ROUND_OUTPUTS = ["lint-render.json", "claim-index.json", "anchors.json",
+                 "fixed-defects.json", "story.json", "fiction.json", "deterministic.json",
+                 "coverage-MG-1.json", "coverage-MG-2.json", "rule-probes-proposed.yaml"]
+ROUND_DIRS = ["dossiers", "rules"]
+CHECKABLE_NEEDS = {"runner", "live-system", "measurement", "person", "document-of-record"}
 
 
-@dataclass
-class GateState:
-    round: int = 1
-    verdict: str = "PENDING"
-    open_critical: int = 0
-    open_major: int = 0
-    open_minor: int = 0
-    positives: int = 0
-    new_blocking: int = 0
-    rounds_without_new: int = 0
-    deferred: int = 0
-    coverage: dict = field(default_factory=dict)
-    breadth_complete: bool = False
-    depth_complete: bool = False
-    breadth_signature: str = ""
-    depth_signature: str = ""
-    coverage_waived: bool = False
-    depth_waived: bool = False
-    history: list[dict] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
+class GateError(Exception):
+    """A usage error: exit 2 with the message."""
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+
+def run_tool(script: str, args: list[str]) -> tuple[int, str]:
+    proc = subprocess.run([sys.executable, str(HERE / script), *args],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def _tail(log: str, n: int = 240) -> str:
+    return " ".join(log.strip().split())[-n:]
+
+
+def read_json(path: Path) -> dict | None:
+    """Parsed JSON object, or None when missing/unreadable. Never `{}` for a missing file."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(read_text(path))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True),
+                    encoding="utf-8")
+
+
+def make_key(*parts) -> str:
+    raw = "|".join(norm(str(p or "")) for p in parts)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def gate_config(project: Project) -> dict:
+    raw = project.get("pipeline.manuscript_gate") or {}
+    cfg = {k: raw.get(k, v) for k, v in DEFAULTS.items()}
+    cfg["checks"] = raw.get("checks") or {}
+    cfg["_notes"] = []
+    try:
+        quiet = int(cfg["rounds_without_new_to_close"])
+    except (TypeError, ValueError):
+        quiet = MIN_ROUNDS_QUIET
+    if quiet < MIN_ROUNDS_QUIET:
+        cfg["_notes"].append(f"rounds_without_new_to_close {cfg['rounds_without_new_to_close']!r} "
+                             f"is below {MIN_ROUNDS_QUIET}: clamped to {MIN_ROUNDS_QUIET} (one "
+                             "quiet round proves nothing)")
+        quiet = MIN_ROUNDS_QUIET
+    cfg["rounds_without_new_to_close"] = quiet
+    return cfg
+
+
+def manuscript_hash(project: Project) -> str:
+    return text_hash("\n\n".join(read_text(p) for p in project.unit_paths))
+
+
+def waivers(project: Project) -> list[dict]:
+    """Every waiver entry, complete or not (see `waiver_problem`)."""
+    return [w for w in as_list(project.load_yaml("project-status.yaml").get("waivers"))
+            if isinstance(w, dict)]
+
+
+def _filled(value, min_chars: int = 0) -> bool:
+    return not is_placeholder(value) and len(str(value).strip()) >= min_chars
+
+
+def waiver_problem(w: dict) -> str:
+    """Why a waiver does not count: it must say who, why and what is owed
+    (`waived_by`/`by`, `reason`, `debt`/`owed`) with real content — not a
+    placeholder (`x`, `N/A`, `TBD`, …), and `reason`/`debt` of at least
+    MIN_NOTE characters. '' when complete."""
+    missing = [name for name, keys, n in (("waived_by", ("waived_by", "by"), 0),
+                                          ("reason", ("reason",), MIN_NOTE),
+                                          ("debt", ("debt", "owed"), MIN_NOTE))
+               if not any(_filled(w.get(k), n) for k in keys)]
+    return (f"missing or placeholder {', '.join(missing)} (reason and debt: {MIN_NOTE}+ "
+            "characters of real content)") if missing else ""
+
+
+def plan_entry(project: Project, w: dict) -> str:
+    """'' when the waiver names a verification-plan entry that exists
+    (`plan: reviews/verification-plan/PLAN.md#V-03`, or `plan_entry: V-03`),
+    else why not. A plan file with no entry for this debt is not a plan."""
+    ref = str(w.get("plan") or "")
+    path, _, anchor = ref.partition("#")
+    anchor = anchor or str(w.get("plan_entry") or "")
+    path = path or PLAN_DEFAULT
+    m = re.fullmatch(r"\s*V-?0*(\d+)\s*", anchor, re.I)
+    if not m:
+        return (f"names no plan entry — add `plan: {PLAN_DEFAULT}#V-NN` pointing at the "
+                f"entry that records this debt (references/verification-plan.md)")
+    file = project.root / path
+    if not file.exists():
+        return f"its plan {path} does not exist"
+    if not re.search(rf"^#{{2,4}}\s+V-0*{m.group(1)}\b", read_text(file), re.M):
+        return f"{path} has no entry V-{int(m.group(1)):02d}"
+    return ""
+
+
+def _code_blocks(project: Project) -> list[str]:
+    """Language tags of the fenced code blocks in the units (executable-looking)."""
+    tags = []
+    for p in project.unit_paths:
+        for line in read_text(p).splitlines():
+            m = re.match(r"^\s*(?:`{3,}|~{3,})\s*([A-Za-z][\w+#.-]*)", line)
+            if m and m.group(1).lower() not in NON_CODE_TAGS:
+                tags.append(m.group(1).lower())
+    return tags
+
+
+def applicable_checks(project: Project) -> list[str]:
+    return LITERARY_CHECKS if project.literary else TECHNICAL_CHECKS
+
+
+# ---------------------------------------------------------------------------
+# Run directory, state
+# ---------------------------------------------------------------------------
+
+
+def resolve_run_dir(project: Project, args) -> Path:
+    """--run-dir > --date > the latest existing run with a state.json > `-current`."""
+    if args.run_dir:
+        return Path(args.run_dir)
+    if args.date:
+        return project.reviews / f"manuscript-gate-{args.date}"
+    runs = sorted((p for p in project.reviews.glob("manuscript-gate-*")
+                   if (p / "state.json").exists()), key=lambda p: p.name)
+    return runs[-1] if runs else project.reviews / "manuscript-gate-current"
+
+
+def load_state(run_dir: Path) -> dict:
+    st = read_json(run_dir / "state.json") or {}
+    st.setdefault("rounds", {})
+    return st
+
+
+def swept_rounds(state: dict, upto: int) -> list[int]:
+    return sorted(int(r) for r, v in state["rounds"].items() if v.get("swept") and int(r) <= upto)
 
 
 # ---------------------------------------------------------------------------
@@ -112,1188 +268,1356 @@ class GateState:
 # ---------------------------------------------------------------------------
 
 
-def run_script(name: str, args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        [sys.executable, str(HERE / name), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
-    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-
-
-def deterministic_sweep(project: Project, round_dir: Path,
-                        unit_args: list[str]) -> dict:
-    """MG-5 + claim index. Always complete, never sampled."""
-    out: dict = {}
+def sweep(project: Project, round_dir: Path, unit_args: list[str], checks: list[str],
+          errors: list[str]) -> dict:
+    """Run every deterministic tool. A non-zero exit or a missing output is an ERROR."""
+    for name in ROUND_OUTPUTS:
+        (round_dir / name).unlink(missing_ok=True)
+    for name in ROUND_DIRS:
+        shutil.rmtree(round_dir / name, ignore_errors=True)
     round_dir.mkdir(parents=True, exist_ok=True)
+    out: dict = {"tools": {}, "blocked": {}}
 
-    lint_json = round_dir / "lint-render.json"
-    code, log = run_script("lint_render.py", [
-        *unit_args, "--json", str(lint_json), "--fail-on", "never", "--quiet"])
-    out["lint_render"] = _read_json(lint_json)
-    print(log.strip())
+    code, log = run_tool("sync_manuscript.py", unit_args)
+    if code != 0:
+        errors.append(f"sync_manuscript.py exited {code}: {_tail(log)}")
 
-    idx_json = round_dir / "claim-index.json"
-    code, log = run_script("validate_claim_index.py", [
-        *unit_args, "--json", str(idx_json), "--quiet"])
-    out["claim_index"] = _read_json(idx_json)
-    if log.strip():
-        print(log.strip())
+    def json_tool(label: str, script: str, args: list[str], name: str,
+                  ok: tuple[int, ...] = (0,), need: str = "") -> dict | None:
+        path = round_dir / name
+        code, log = run_tool(script, [*args, "--json", str(path)])
+        data = read_json(path)
+        if code not in ok or data is None or (need and not isinstance(data.get(need), list)):
+            errors.append(f"{label}: {script} exited {code}"
+                          + (" and wrote no valid JSON" if data is None else "")
+                          + f" — {_tail(log)}")
+            return None
+        return data
 
-    # Anchors. Reported every round because references rot between rounds, not
-    # during them — an inserted section shifts every line-keyed reference in the
-    # book at once, and two of three observed breakages were exactly that.
-    anchors_json = round_dir / "anchors.json"
-    code, log = run_script("resolve_anchors.py", [
-        *unit_args, "--json", str(anchors_json), "--quiet"])
-    out["anchors"] = _read_json(anchors_json)
-    if log.strip():
-        print(log.strip())
-
-    fd_json = round_dir / "fixed-defects.json"
-    code, log = run_script("check_fixed_defects.py", [
-        *unit_args, "--json", str(fd_json), "--quiet"])
-    out["fixed_defects"] = _read_json(fd_json)
-    if log.strip():
-        print(log.strip())
-
+    if "MG-5" in checks:
+        out["tools"]["MG-5"] = json_tool("MG-5", "lint_render.py", [
+            *unit_args, "--fail-on", "never", "--quiet"], "lint-render.json", need="findings")
+    if not project.literary:
+        out["claim_index"] = json_tool("claim index", "validate_claim_index.py",
+                                       [*unit_args, "--quiet"], "claim-index.json")
+    out["anchors"] = json_tool("anchors", "resolve_anchors.py", [*unit_args, "--quiet"],
+                               "anchors.json")
+    if "MG-7" in checks:
+        out["tools"]["MG-7"] = json_tool("MG-7", "check_fixed_defects.py", [
+            *unit_args, "--quiet", "--fail-on", "never"], "fixed-defects.json", need="findings")
+    root_arg = ["--root", str(project.root)]
+    for check, script, args, name in (
+            ("MG-S", "check_story.py", [*root_arg, "--manuscript"], "story.json"),
+            ("MG-T", "lint_fiction.py", [*root_arg, "--book"] + (
+                ["--units", unit_args[unit_args.index("--units") + 1]]
+                if "--units" in unit_args else []), "fiction.json")):
+        if check not in checks:
+            continue
+        if not (HERE / script).exists():
+            if check == "MG-S":
+                # R1–R4 are not a coverage question: no waiver may close them.
+                errors.append(f"MG-S: scripts/{script} is not installed — the story rules "
+                              "cannot be checked; the gate cannot pass without them")
+                continue
+            # The check could not run, so it is not complete.
+            out["blocked"][check] = f"scripts/{script} is not installed"
+            continue
+        out["tools"][check] = json_tool(check, script, args, name, ok=(0, 1), need="findings")
     return out
 
 
-def audit_runners(project: Project) -> dict:
-    """MG-6 — every executable surface either ran or carries a waiver.
+def det_records(sweep_out: dict) -> list[dict]:
+    """Tool output → normalized finding records, keyed by content (never by line)."""
+    recs: list[dict] = []
+    seen: dict[str, int] = {}
 
-    A reasoning-only verdict on executable code is not verification. The first
-    time eight tests from one such book were run on a real engine, the results
-    contradicted what the reviewer had concluded on paper. So this does not
-    decide whether reasoning was good enough; it only asks whether the debt is
-    declared, and makes an undeclared one blocking.
+    def add(check: str, rule: str, severity: str, location: str, text: str, detail: str) -> None:
+        file = location.rpartition(":")[0] or location
+        base = make_key(check, rule, file, text or detail)
+        seen[base] = seen.get(base, 0) + 1
+        key = f"{check}-{base}" + (f"-{seen[base]}" if seen[base] > 1 else "")
+        recs.append({"key": key, "check": check, "kind": "tool", "relation": rule,
+                     "subject": file, "severity": severity, "location": location,
+                     "quote": (text or "")[:200], "detail": detail[:300]})
+
+    tools = sweep_out.get("tools") or {}
+    for f in (tools.get("MG-5") or {}).get("findings") or []:
+        add("MG-5", f.get("check", ""), f.get("severity", "minor"), f.get("location", ""),
+            f.get("quote", ""), f.get("message", ""))
+    for f in (tools.get("MG-7") or {}).get("findings") or []:
+        add("MG-7", f.get("entry", ""), f.get("severity", "critical"), f.get("location", ""),
+            f.get("quote", ""), f"matched `{f.get('pattern')}` — {f.get('what', '')}")
+    for f in (tools.get("MG-S") or {}).get("findings") or []:
+        sev = {"blocking": "critical", "major": "major", "warning": "minor"}.get(
+            str(f.get("severity")), "minor")
+        add("MG-S", f.get("code", ""), sev, str(f.get("location") or f.get("subject") or ""),
+            f"{f.get('subject') or ''} {f.get('detail') or ''}", str(f.get("detail") or ""))
+    for f in (tools.get("MG-T") or {}).get("findings") or []:
+        sev = str(f.get("severity"))
+        if sev not in ("major", "minor"):
+            continue                                   # info is observation only
+        unit, line = str(f.get("unit") or ""), f.get("line")
+        add("MG-T", f.get("rule", ""), sev, f"{unit}:{line}" if line else unit, "",
+            f"{unit} {f.get('detail', '')}")
+    return recs
+
+
+def config_records(project: Project, cfg: dict, checks: list[str]) -> tuple[list[dict], set[str], list[str]]:
+    """Findings that come from configuration, recomputed on every run.
+
+    Returns (records, checks switched off WITH a valid waiver, notes). A check
+    switched off without a complete `manuscript_gate.<check>` waiver (who, why,
+    what is owed; MG-6 also a plan entry) is a `major` finding: silence in config
+    is how deferred checks disappeared for months. Literary MG-S is never off.
     """
-    surfaces = (project.get("validation_surface.surfaces") or [])
-    status = project.load_yaml("project-status.yaml")
-    waivers = {w.get("check"): w for w in (status.get("waivers") or [])}
+    recs: list[dict] = []
+    notes: list[str] = []
+    waived: set[str] = set()
+    ws = waivers(project)
 
+    def rec(key, check, relation, subject, detail):
+        recs.append({"key": key, "check": check, "kind": "config", "relation": relation,
+                     "subject": subject, "severity": "major", "location": "bible/meta.yaml",
+                     "quote": "", "detail": detail})
+
+    for w in ws:
+        why = waiver_problem(w)
+        if why:
+            notes.append(f"waiver `{w.get('check')}` does not count: {why} (who, why, what is "
+                         "owed — SKILL.md principle 8)")
+    for check in checks:
+        if project.literary and check in LITERARY_ALWAYS_ON:
+            why = ("R1–R4 are not waivable" if check == "MG-S" else
+                   "the whole-book read of arcs and ending on the page is part of R2")
+            if cfg["checks"].get(check) is False:
+                rec(f"{check}-cannot-disable", check, "check-disabled", check,
+                    f"{check} cannot be disabled in book-literary: {why}. The setting "
+                    f"`checks.{check}: false` is ignored — remove it")
+            if any(w.get("check") == f"manuscript_gate.{check}" for w in ws):
+                notes.append(f"a `manuscript_gate.{check}` waiver is ignored: {why}")
+            continue
+        if cfg["checks"].get(check) is not False:
+            continue
+        cands = [w for w in ws if w.get("check") == f"manuscript_gate.{check}"]
+        good = [w for w in cands if not waiver_problem(w)
+                and (check != "MG-6" or not plan_entry(project, w))]
+        if good:
+            waived.add(check)
+            continue
+        extra = ""
+        if cands and check == "MG-6":
+            extra = " (the waiver " + (waiver_problem(cands[0]) or plan_entry(project, cands[0])) + ")"
+        elif cands:
+            extra = f" (the waiver is incomplete: {waiver_problem(cands[0])})"
+        rec(f"{check}-disabled", check, "check-disabled", check,
+            f"{check} is switched off in pipeline.manuscript_gate.checks with no complete "
+            f"`manuscript_gate.{check}` waiver in project-status.yaml" + extra)
+    if "MG-6" in checks and "MG-6" not in waived and cfg["checks"].get("MG-6") is not False:
+        surfaces = [s for s in as_list(project.get("validation_surface.surfaces"))
+                    if isinstance(s, dict)]
+        tags = _code_blocks(project)
+        if tags and not surfaces:
+            rec("MG-6-no-surface", "MG-6", "runner", "validation_surface",
+                f"code present, no surface declared: {len(tags)} fenced block(s) tagged "
+                f"{', '.join(sorted(set(tags))[:6])} and `validation_surface.surfaces` is empty — "
+                "declare the surface (references/validation-surface.md) and run it, or waive "
+                "it with a plan entry")
+        for row in audit_runners(project, ws)["surfaces"]:
+            if row.get("blocking"):
+                rec(f"MG-6-{make_key('surface', row['surface'])}", "MG-6", "runner",
+                    row["surface"], row["why"])
+            elif row.get("undeclared"):
+                notes.append(f"MG-6: cannot tell whether surface `{row['surface']}` is "
+                             f"executable — add `executable: true|false` to it in meta.yaml.")
+    return recs, waived, notes
+
+
+def surface_evidence(project: Project, s: dict) -> str:
+    """'' when the surface names `evidence: <path>` — an existing, non-empty
+    runner-output file under the project — else why not. A runner string
+    ("qlik reload (never run)", "reviewer-only", "x") is a description, never
+    evidence that anything ran."""
+    ev = s.get("evidence")
+    if is_placeholder(ev):
+        return "no `evidence: <path>` to the runner's output"
+    path = project.root / str(ev).strip()
+    try:
+        ok = path.is_file() and path.stat().st_size > 0
+    except OSError:
+        ok = False
+    return "" if ok else f"its evidence `{ev}` is not an existing, non-empty file"
+
+
+def audit_runners(project: Project, ws: list[dict]) -> dict:
+    """MG-6 — every executable surface ran (its `evidence` file exists), or
+    carries a waiver WITH a plan.
+
+    Three states: `executable` declared wins; the name heuristic is a fallback;
+    anything unrecognized is UNKNOWN, not fine. A waiver counts only when it is
+    complete and points at a verification-plan entry that exists: a waiver with
+    no plan is a promise, not declared debt.
+    """
+    by_check: dict[str, list[dict]] = {}
+    for w in ws:
+        by_check.setdefault(str(w.get("check")), []).append(w)
     rows: list[dict] = []
-    for s in surfaces:
-        sid = s.get("surface", "?")
+    for s in as_list(project.get("validation_surface.surfaces")):
+        if not isinstance(s, dict):
+            continue
+        sid = str(s.get("surface", "?"))
         runner = str(s.get("runner", "") or "")
-        real_runner = bool(runner) and not runner.startswith(("internal:", "reviewer-only"))
-        waiver = waivers.get(f"validation_surface.{sid}") or waivers.get(
-            "validation_surface.runner")
-
-        # Three states, not two. `executable` declared in meta.yaml is
-        # authoritative; the name heuristic is a fallback; and anything the
-        # heuristic does not recognize is UNKNOWN, not "fine".
-        #
-        # Guessing "not executable" is the failure mode that matters here: it
-        # turns an undeclared debt into a silent pass, which is exactly how a
-        # book shipped with 3,200 lines of code verified only by reasoning.
+        missing = surface_evidence(project, s)
+        ran = not missing
         if "executable" in s:
-            executable = bool(s["executable"])
-            determined = True
+            executable, determined = bool(s["executable"]), True
         else:
-            executable = _looks_executable(sid, runner)
-            determined = executable or real_runner
-
-        rows.append({
-            "surface": sid,
-            "runner": runner or "(none)",
-            "executable": executable,
-            "determined": determined,
-            "real_runner": real_runner,
-            "waived": bool(waiver),
-            "waiver_reason": (waiver or {}).get("reason"),
-            "debt": (waiver or {}).get("debt"),
-            "blocking": executable and not real_runner and not waiver,
-            "undeclared": (not determined) and not waiver,
-        })
-
-    if not surfaces:
-        rows.append({
-            "surface": "(none declared)", "runner": "(none)", "executable": False,
-            "real_runner": False, "waived": bool(waivers.get("validation_surface")),
-            "blocking": False,
-            "waiver_reason": "no validation surface declared for this project",
-        })
+            executable = any(t in sid.lower() for t in (
+                "exec", "script", "lint", "sql", "schema", "expression", "code", "notebook",
+                "shell", "bash", "python", "js", "node"))
+            determined = executable or ran
+        cands = by_check.get(f"validation_surface.{sid}", []) + by_check.get(
+            "validation_surface.runner", [])
+        planned = [w for w in cands if not waiver_problem(w) and not plan_entry(project, w)]
+        why = ""
+        if executable and not ran:
+            why = (f"surface `{sid}` is executable (runner `{runner or '(none)'}`) and has "
+                   f"{missing}, and "
+                   + (f"its waiver does not count — it "
+                      + (waiver_problem(cands[0]) or plan_entry(project, cands[0]))
+                      if cands else "there is no waiver. Run it and record the output as "
+                                    "`evidence`, or waive it WITH a plan entry"))
+        rows.append({"surface": sid, "runner": runner or "(none)", "executable": executable,
+                     "evidence": s.get("evidence"),
+                     "blocking": executable and not ran and not planned,
+                     "undeclared": (not determined) and not cands, "why": why})
     return {"surfaces": rows}
 
 
-def _looks_executable(surface_id: str, runner: str) -> bool:
-    """Heuristic default. A project can override with `executable:` per surface."""
-    tokens = ("exec", "script", "lint", "sql", "schema", "expression", "code",
-              "notebook", "shell", "bash", "python", "js", "node")
-    return any(t in surface_id.lower() for t in tokens)
-
-
 # ---------------------------------------------------------------------------
-# Preparation
+# Findings files
 # ---------------------------------------------------------------------------
 
 
-def prepare_inputs(project: Project, round_dir: Path, unit_args: list[str],
-                   cfg: dict, propagation: list[str] | None,
-                   round_no: int, ledger_path: Path) -> list[str]:
-    """Build dossiers and rule candidates; return the dispatch checklist.
+def read_finding_docs(run_dir: Path, upto: int) -> tuple[list[dict], list[str]]:
+    """Every findings file of every round ≤ `upto`, schema-validated.
 
-    Both emitters get `--audited`, so from round 2 they select the next slice of
-    the pool instead of re-emitting round 1's. Without that, rounds 2+ audit
-    nothing new, no new findings can appear, and "two consecutive quiet rounds"
-    is satisfied by construction rather than by evidence.
+    An invalid file is an ERROR by name, never a silent drop: `"severity":
+    "Critical"` used to count as zero criticals.
     """
-    todo: list[str] = []
-    ledger_args = ["--audited", str(ledger_path), "--round", str(round_no)]
-
-    probes = project.root / "bible" / "concept-probes.yaml"
-    if not probes.exists():
-        code, log = run_script("bootstrap_probes.py", unit_args)
-        print(log.strip())
-
-    dossiers = round_dir / "dossiers"
-    if probes.exists():
-        code, log = run_script("build_concept_dossier.py", [
-            *unit_args, "--all", "--out", str(dossiers),
-            "--min-units", str(cfg["concept_min_units"]),
-            "--top", str(cfg["top_concepts"]),
-            "--coverage", str(coverage_path(round_dir, "MG-1")), *ledger_args])
-        for line in log.strip().splitlines():
-            if line.startswith("[dossier]") and (
-                    "skipped" in line or "NOT emitted" in line or "index" in line
-                    or "coverage" in line or "ledger" in line):
-                print(line)
-        n = len(list(dossiers.glob("*.md"))) - 1 if dossiers.exists() else 0
-        todo.append(f"MG-1: dispatch concept-auditor over {max(n, 0)} dossier(s) in "
-                    f"{dossiers} — lenses `pairs`, `numbers-and-absolutes`, `source`. "
-                    f"Read {dossiers / '_index.md'} first and start with the D2 rows.")
-    else:
-        # A skipped check has to leave a record. Without one the verdict sees
-        # "unknown" and reports it as subjects nobody opened, which sends the
-        # reader looking for auditors to dispatch when the real problem is a
-        # missing input file. Silence reading as something else is the whole
-        # defect class this gate exists for; it applies to the gate itself.
-        coverage_path(round_dir, "MG-1").write_text(json.dumps({
-            "check": "MG-1", "round": round_no, "eligible_candidates": 0,
-            "selected": 0, "emitted": 0, "sampled_within": 0,
-            "already_audited": [], "requeued": [], "strata": {}, "subjects": [],
-            "cut": [],
-            "blocked": "no bible/concept-probes.yaml and bootstrap_probes.py "
-                       "produced none — MG-1 cannot run",
-        }, indent=2), encoding="utf-8")
-        todo.append("MG-1: SKIPPED — no bible/concept-probes.yaml and bootstrap "
-                    "failed. Run scripts/bootstrap_probes.py by hand, or write "
-                    "bible/concept-probes-tuned.yaml. Until then MG-1 has no "
-                    "coverage and the gate cannot reach PASS.")
-
-    rules = round_dir / "rules"
-    proposed = round_dir / "rule-probes-proposed.yaml"
-    code, log = run_script("extract_rule_candidates.py", [
-        *unit_args, "--out", str(rules), "--top", str(cfg["top_rules"]),
-        "--coverage", str(coverage_path(round_dir, "MG-2")),
-        "--propose-probes", str(proposed), *ledger_args])
-    for line in log.strip().splitlines():
-        if line.startswith("[rules]"):
-            print(line)
-    todo.append(f"MG-2: dispatch rule-auditor over the rule files in {rules} "
-                f"(read {rules / '_index.md'} first)")
-    if proposed.exists() and "can only be SAMPLED" in log:
-        todo.append(f"MG-2 depth: {proposed} lists the rules that can only be SAMPLED, "
-                    f"ranked. Narrowing them in bible/rule-probes-tuned.yaml is the "
-                    f"only way `PASS` is reachable — otherwise the gate stays at "
-                    f"`PASS-SAMPLED` and the depth waiver becomes permanent. This is "
-                    f"human work: narrowing is a claim about a rule's scope.")
-    todo.append("Every dispatched subject needs a findings file, INCLUDING the ones "
-                "that come back clean — an auditor that ran and found nothing is "
-                "coverage; a subject with no file is a subject nobody looked at, and "
-                "the verdict counts it that way.")
-    todo.append("MG-1 and MG-2 run TWICE per subject, same prompt, findings merged. "
-                "Two runs of one lens disagreed on real sites in the measurement; "
-                "the variance is in the sampling, not the prompt. Set `pass: 1|2` in "
-                "each findings file so the merge can flag single-round findings.")
-
-    if _has_exercises(project):
-        todo.append("MG-3: dispatch rule-auditor in exercise-coverage mode over every "
-                    "unit that declares exercises in outline/units.yaml")
-    else:
-        todo.append("MG-3: skipped — this profile has no exercises")
-
-    todo.append("MG-4: dispatch reader-pov in whole-book mode over manuscript.md "
-                "(references/agents/reader-pov.md § Whole-book mode)")
-
-    if propagation:
-        todo.insert(0, f"Round scope is INCREMENTAL: {len(propagation)} site(s) in the "
-                       f"propagation set. See {round_dir / 'propagation.json'}.")
-    return todo
-
-
-def _has_exercises(project: Project) -> bool:
-    if str(project.get("structure.exercises", "none")) not in ("none", "", "None"):
-        return True
-    outline = project.load_yaml("outline/units.yaml")
-    for unit in (outline.get("units") or []):
-        if unit.get("exercises"):
-            return True
-    return False
-
-
-def _exercise_units(project: Project) -> list[str]:
-    """MG-3's denominator: the units that actually declare exercises."""
-    outline = project.load_yaml("outline/units.yaml")
-    named = [str(u.get("id") or u.get("unit") or u.get("slug") or "")
-             for u in (outline.get("units") or []) if u.get("exercises")]
-    named = [n for n in named if n]
-    if named:
-        return named
-    # The profile says every unit has exercises but the outline does not itemize
-    # them. Fall back to the unit set rather than to zero: a denominator of zero
-    # would report full coverage for a check that never ran.
-    if _has_exercises(project):
-        return [p.stem for p in project.unit_paths]
-    return []
-
-
-def propagation_set(project: Project, claim_index_result: dict) -> list[str]:
-    """Sites to re-audit next round: what changed, plus its siblings.
-
-    This is the entire reason `related` exists in the claim index. Without it,
-    every round re-audits the whole book, the loop becomes unaffordable, someone
-    cuts it to one pass, and the gate stops being a gate.
-    """
-    sites: list[str] = []
-    for entry in (claim_index_result.get("propagate") or []):
-        sites.append(entry["changed"])
-        sites.extend(entry.get("review") or [])
-    seen: set[str] = set()
-    return [s for s in sites if not (s in seen or seen.add(s))]
-
-
-# ---------------------------------------------------------------------------
-# Verdict
-# ---------------------------------------------------------------------------
-
-
-def read_finding_docs(round_dir: Path) -> list[dict]:
-    """Every findings FILE in the round, parsed.
-
-    Files, not findings. A subject audited clean writes a file with an empty
-    `findings` list, and that file is the only evidence anybody looked at it.
-    Counting findings instead of files would score a clean audit as no coverage —
-    exactly backwards.
-    """
-    out: list[dict] = []
-    fdir = round_dir / "findings"
-    if not fdir.exists():
-        return out
-    for path in sorted(fdir.glob("*.json")):
-        try:
-            doc = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            print(f"[gate] UNREADABLE findings file {path.name}: {exc}")
+    schema = load_schema()
+    docs: list[dict] = []
+    errors: list[str] = []
+    for rd in sorted(run_dir.glob("round-*"), key=lambda p: natural_key(p.name)):
+        n = unit_number(rd.name)
+        if n is None or n > upto:
             continue
-        doc["_file"] = path.name
-        out.append(doc)
-    return out
+        for path in sorted((rd / "findings").glob("*.json")):
+            where = f"{rd.name}/findings/{path.name}"
+            try:
+                doc = json.loads(read_text(path))
+            except json.JSONDecodeError as exc:
+                errors.append(f"{where}: not valid JSON ({exc})")
+                continue
+            problems = validate(doc, schema)
+            if problems:
+                errors.append(f"{where}: does not match templates/gate-findings.schema.json — "
+                              + "; ".join(problems[:3]))
+                continue
+            m = re.search(r"\.p(\d+)\.json$", path.name)
+            doc["_round"] = n
+            doc["_pass"] = int(doc.get("pass") or (m.group(1) if m else 1))
+            doc["_file"] = where
+            docs.append(doc)
+    return docs, errors
 
 
-# ---------------------------------------------------------------------------
-# Coverage — the term the verdict was missing
-# ---------------------------------------------------------------------------
+def subject_of(doc: dict, exercise_ids: dict[int, str]) -> str:
+    """The coverage subject a findings file audited."""
+    if doc.get("check") == "MG-C":
+        return str(doc.get("lens"))
+    if doc.get("check") == "MG-3":
+        n = unit_number(doc.get("subject"))
+        return exercise_ids.get(n, str(doc.get("subject"))) if n is not None else str(doc.get("subject"))
+    return str(doc.get("subject"))
 
 
-def check_coverage(project: Project, round_dir: Path, cfg: dict,
-                   docs: list[dict], ledger: dict) -> dict[str, dict]:
-    """How much of each semantic check's eligible surface has been audited.
-
-    Cumulative, not per-round: the numerator is everything the ledger already
-    recorded plus everything this round produced a findings file for. The
-    denominator is the post-filter candidate count, and it never shrinks — a
-    covered candidate leaves the pool, not the denominator.
-
-    Two axes, reported separately. `covered/eligible` is breadth. `sampled` is
-    depth: subjects whose emitted file was a sample of themselves rather than
-    all of them. A run with full breadth and partial depth is not complete, and
-    collapsing the two numbers is how that gets hidden.
-    """
-    enabled = cfg.get("checks") or {}
+def agent_records(docs: list[dict], exercise_ids: dict[int, str]
+                  ) -> tuple[dict[str, dict], dict[str, int]]:
+    """Merge agent findings across passes, lenses and rounds by content key."""
     out: dict[str, dict] = {}
-
-    for check in SEMANTIC_CHECKS:
-        if enabled.get(check) is False:
-            out[check] = {"state": "waived", "counts": False,
-                          "label": f"{check} disabled by config — needs a `waivers` entry"}
-            continue
-
-        subjects_seen = {str(d.get("subject") or "") for d in docs
-                         if d.get("check") == check}
-        sampled_now = {str(d.get("subject") or "") for d in docs
-                       if d.get("check") == check and d.get("sampled")}
-        prior = ledger.get(check, {})
-
-        rec = _read_json(coverage_path(round_dir, check))
-        if rec and rec.get("blocked"):
-            # The check could not run at all. Breadth is not complete — but say
-            # WHY, or the reader goes looking for auditors to dispatch when the
-            # real problem is a missing input.
-            out[check] = _record(check, 0, 1, 0, not_dispatched=[check])
-            out[check]["state"] = "blocked"
-            out[check]["label"] = f"{check} BLOCKED — {rec['blocked']}"
-            continue
-        if rec:
-            emitted = {s["id"]: s for s in (rec.get("subjects") or [])}
-            already = list(rec.get("already_audited") or [])
-            covered_ids = set(already) | (set(emitted) & subjects_seen)
-            eligible = int(rec.get("eligible_candidates", 0))
-            sampled_ids = {i for i in covered_ids
-                           if (emitted.get(i, {}).get("sampled")
-                               or prior.get(i, {}).get("sampled")
-                               or i in sampled_now)}
-            not_dispatched = sorted(set(emitted) - subjects_seen)
-            out[check] = _record(check, len(covered_ids), eligible, len(sampled_ids),
-                                 cut=rec.get("cut") or [],
-                                 requeued=list(rec.get("requeued") or []),
-                                 not_dispatched=not_dispatched,
-                                 selected=int(rec.get("selected", 0)),
-                                 sampled_ids=sorted(sampled_ids))
-            continue
-
-        # No coverage record. Either prepare never ran for this round, or this is
-        # a check no emitter produces (MG-3, MG-4) — handled below. Unknown is
-        # NOT complete: the whole point is that silence stops meaning "clean".
-        if check == "MG-3":
-            units = _exercise_units(project)
-            if not units:
-                out[check] = {"state": "n/a", "counts": False,
-                              "label": "MG-3 n/a — this profile has no exercises"}
+    positives: dict[str, int] = {}
+    for doc in docs:
+        check = str(doc.get("check"))
+        subject = (subject_of(doc, exercise_ids) if check == "MG-3"
+                   else str(doc.get("subject")))
+        for f in doc.get("findings") or []:
+            rel = f.get("relation")
+            if rel in POSITIVE_RELATIONS:
+                positives[check] = positives.get(check, 0) + 1
                 continue
-            covered_ids = (set(prior) | subjects_seen) & set(units)
-            sampled_ids = {u for u in covered_ids
-                           if u in sampled_now or prior.get(u, {}).get("sampled")}
-            out[check] = _record("MG-3", len(covered_ids), len(units),
-                                 len(sampled_ids),
-                                 not_dispatched=sorted(set(units) - covered_ids),
-                                 selected=len(subjects_seen),
-                                 sampled_ids=sorted(sampled_ids))
-            continue
-
-        if check == "MG-4":
-            done = bool(subjects_seen) or bool(prior)
-            sampled = bool(sampled_now) or any(v.get("sampled") for v in prior.values())
-            out[check] = _record("MG-4", 1 if done else 0, 1, 1 if sampled else 0,
-                                 not_dispatched=[] if done else ["manuscript"],
-                                 selected=1 if subjects_seen else 0,
-                                 sampled_ids=["manuscript"] if sampled else [])
-            out[check]["label"] = ("MG-4 full read" if done and not sampled else
-                                   "MG-4 partial read" if done else "MG-4 NOT RUN")
-            continue
-
-        out[check] = {
-            "state": "unknown", "counts": True, "covered": 0, "eligible": 0,
-            "sampled": 0, "sampled_ids": [], "cut": [], "requeued": [],
-            "not_dispatched": [], "selected_this_round": 0,
-            # Unknown breadth is not complete; depth over nothing is vacuously
-            # fine. Reporting depth as short here would send someone narrowing
-            # rules to fix a missing coverage record.
-            "breadth_complete": False, "depth_complete": True, "complete": False,
-            "label": f"{check} no coverage record — run the gate without --verdict-only",
-        }
-    return out
-
-
-def _record(check: str, covered: int, eligible: int, sampled: int,
-            cut: list | None = None, requeued: list | None = None,
-            not_dispatched: list | None = None, selected: int = 0,
-            sampled_ids: list | None = None) -> dict:
-    """One check's coverage, with the two axes kept apart.
-
-    They are kept apart because they close by different work, and one of them
-    cannot always be closed at all. BREADTH closes by spending rounds — the
-    emitters drain the pool on their own. DEPTH closes by narrowing a subject's
-    scope by hand, which is judgement, and sometimes the honest answer is that
-    the rule really does reach all those instances.
-
-    Merging them made `PASS` unreachable by construction: 221 of 454 rules on the
-    reference book were over the tractability ceiling, so `sampled == 0` could
-    never hold and every project would have ended at a standing waiver.
-    """
-    breadth = covered >= eligible
-    depth = sampled == 0
-    return {
-        "state": "measured", "counts": True,
-        "covered": covered, "eligible": eligible, "sampled": sampled,
-        "sampled_ids": sampled_ids or [],
-        "cut": cut or [], "requeued": requeued or [],
-        "not_dispatched": not_dispatched or [], "selected_this_round": selected,
-        "breadth_complete": breadth, "depth_complete": depth,
-        "complete": breadth and depth,
-        "label": _coverage_label(check, covered, eligible, sampled),
-    }
-
-
-def update_ledger(ledger: dict, round_dir: Path, docs: list[dict],
-                  round_no: int) -> dict:
-    """Record what this round audited, keyed by subject id AND fingerprint.
-
-    Cumulative and append-only in practice: an entry is only ever overwritten by
-    a later, better audit of the same subject. Deleting the file re-audits
-    everything, which is the honest way to start over.
-    """
-    for check in SEMANTIC_CHECKS:
-        rec = _read_json(coverage_path(round_dir, check))
-        emitted = {s["id"]: s for s in (rec.get("subjects") or [])}
-        seen: dict[str, bool] = {}
-        for d in docs:
-            if d.get("check") != check:
+            if rel not in DEFECT_RELATIONS:
                 continue
-            sid = str(d.get("subject") or "")
-            if not sid:
-                continue
-            seen[sid] = seen.get(sid, False) or bool(d.get("sampled"))
-        entry = ledger.setdefault(check, {})
-        for sid, sampled_now in seen.items():
-            info = emitted.get(sid, {})
-            prev = entry.get(sid, {})
-            entry[sid] = {
-                "fingerprint": info.get("fingerprint") or prev.get("fingerprint", ""),
-                # Not carried over from the previous entry: a re-audit that saw
-                # the whole subject supersedes an earlier one that sampled it.
-                "sampled": bool(sampled_now or info.get("sampled")),
-                "round": round_no,
-            }
-    return ledger
-
-
-def _coverage_label(check: str, covered: int, eligible: int, sampled: int) -> str:
-    noun = {"MG-1": "concepts", "MG-2": "rules", "MG-3": "exercise units"}.get(check, "")
-    tail = f" ({sampled} sampled)" if sampled else ""
-    return f"{check} {covered}/{eligible} {noun}{tail}".strip()
-
-
-# The ladder out of each axis, named where the reader is standing. An escape
-# hatch nobody can find is not an escape hatch — and until v3.3 the depth axis
-# had no hatch at all, only a script comment pointing at a "hand-written probe"
-# that did not exist for rules.
-LADDER = {
-    "MG-1": "raise `home_cap` on the probe, or narrow it, in "
-            "bible/concept-probes-tuned.yaml",
-    "MG-2": "narrow, scope or split the rule in bible/rule-probes-tuned.yaml — "
-            "round-N/rule-probes-proposed.yaml is the ranked worklist",
-    "MG-3": "audit the exercise units that have no findings file yet",
-    "MG-4": "re-run the whole-book read without sampling",
-}
-
-
-def coverage_signature(coverage: dict[str, dict], axis: str = "breadth") -> str:
-    """A stable string over the exact numbers, for a waiver to pin.
-
-    Without it a waiver written when coverage was 40/169 keeps covering the book
-    after someone lowers the quota to 5 — a waiver that outlives its own facts is
-    the mechanism this gate spends its whole design budget preventing.
-
-    One signature per axis, because the axes waive separately: they are different
-    debts, closed by different work, and a single number would let one hide
-    behind the other.
-    """
-    if axis == "depth":
-        parts = [f"{c}:{v['sampled']}s/{v['covered']}"
-                 for c, v in sorted(coverage.items()) if v.get("counts")]
-    else:
-        parts = [f"{c}:{v['covered']}/{v['eligible']}"
-                 for c, v in sorted(coverage.items()) if v.get("counts")]
-    return "|".join(parts)
-
-
-def find_waiver(project: Project, check: str, signature: str) -> tuple[bool, str]:
-    """(valid, note). A waiver whose signature does not match is stale."""
-    status = project.load_yaml("project-status.yaml")
-    for w in (status.get("waivers") or []):
-        if w.get("check") != check:
-            continue
-        if str(w.get("signature", "")) == signature:
-            return True, ""
-        return False, (
-            f"A `{check}` waiver exists but its signature is stale — it was written "
-            f"for `{w.get('signature')}` and the numbers are now `{signature}`. "
-            f"Re-read them and update it, or drop it.")
-    return False, ""
-
-
-def read_findings(round_dir: Path) -> list[dict]:
-    """Read every findings file and MERGE the two passes.
-
-    MG-1 and MG-2 auditors run twice on the same subject with the same prompt.
-    Measured: two runs of one lens over the same six rules disagreed on real
-    sites, and one finding existed in only one run. The variance is in the
-    sampling, not the instructions, so no prompt tuning removes it — two passes
-    and a union do.
-
-    Merging also produces a free signal. A finding only one pass found is the
-    first candidate for a false positive: `single_round: true`, and it goes to
-    the front of the verification queue.
-    """
-    raw: list[dict] = []
-    for doc in read_finding_docs(round_dir):
-        for f in (doc.get("findings") or []):
-            f["_file"] = doc.get("_file")
-            f["_check"] = doc.get("check")
-            f["_lens"] = doc.get("lens")
-            f["_subject"] = doc.get("subject")
-            f["_sampled"] = bool(doc.get("sampled"))
-            f["_pass"] = doc.get("pass")
-            raw.append(f)
-
-    merged: dict[str, dict] = {}
-    passes: dict[str, set] = {}
-    for f in raw:
-        k = _key(f)
-        passes.setdefault(k, set()).add(f.get("_pass"))
-        if k not in merged:
-            merged[k] = f
-        else:
-            # Keep the richer record: a pass that filled other_sites or the
-            # omitted precondition knows more than one that did not.
-            if len(f.get("other_sites") or []) > len(merged[k].get("other_sites") or []):
-                merged[k] = f
-
-    out = list(merged.values())
-    for f in out:
-        seen = {p for p in passes[_key(f)] if p is not None}
-        # Only meaningful once both passes actually ran and are labelled.
-        f["single_round"] = bool(seen) and len(seen) == 1 and len(
-            {p for ps in passes.values() for p in ps if p is not None}) > 1
-    return out
-
-
-def compute_verdict(findings: list[dict], lint: dict, runners: dict,
-                    prior_rounds: list[dict], cfg: dict,
-                    coverage: dict[str, dict] | None = None,
-                    fixed_defects: dict | None = None) -> GateState:
-    st = GateState()
-    st.coverage = coverage or {}
-
-    def unresolved(f: dict) -> bool:
-        decision = (f.get("resolution") or {}).get("decision", "open")
-        if decision in ("fixed", "rejected", "waived"):
-            return False
-        # A finding the verifier refuted is not a defect. That is the whole point
-        # of the adversarial pass, and treating REFUTED as open would make the
-        # loop non-terminating.
-        return (f.get("verification") or {}).get("verdict") != "REFUTED"
-
-    for f in findings:
-        rel = f.get("relation")
-        if rel in POSITIVE_RELATIONS:
-            st.positives += 1
-            continue
-        if rel not in DEFECT_RELATIONS or not unresolved(f):
-            continue
-        sev = (f.get("verification") or {}).get("corrected_severity") or f.get("severity")
-        if sev == "critical":
-            st.open_critical += 1
-        elif sev == "major":
-            st.open_major += 1
-        elif sev == "minor":
-            st.open_minor += 1
-
-    # MG-5 criticals block on their own. They are deterministic and unarguable:
-    # a paragraph that prints as a heading is not a matter of opinion.
-    lint_critical = int((lint.get("counts") or {}).get("critical", 0))
-    lint_major = int((lint.get("counts") or {}).get("major", 0))
-    st.open_critical += lint_critical
-    st.open_major += lint_major
-
-    # MG-7 — a fixed defect came back. Deterministic and, by default, critical:
-    # a formulation that took four passes to catch the first time does not get to
-    # re-enter quietly.
-    fd = (fixed_defects or {}).get("counts") or {}
-    st.open_critical += int(fd.get("critical", 0))
-    st.open_major += int(fd.get("major", 0))
-    if int(fd.get("critical", 0)) or int(fd.get("major", 0)):
-        st.notes.append(
-            "MG-7: a defect recorded in `bible/fixed-defects.yaml` reappeared. Before "
-            "editing prose, check the entry's `allow_in` — text that teaches against "
-            "the wrong form is supposed to quote it, and a pin on the code rather "
-            "than on the claim fires on the fix itself.")
-
-    blocking_runners = [r for r in (runners.get("surfaces") or []) if r.get("blocking")]
-    st.open_major += len(blocking_runners)
-    for r in blocking_runners:
-        st.notes.append(
-            f"MG-6: surface `{r['surface']}` is executable but its runner is "
-            f"`{r['runner']}`, and there is no waiver. Either run it, or record a "
-            f"waiver with the verification plan as declared debt (references/verification-plan.md).")
-    for r in (runners.get("surfaces") or []):
-        if r.get("undeclared"):
-            st.notes.append(
-                f"MG-6: cannot tell whether surface `{r['surface']}` is executable. "
-                f"Add `executable: true|false` to it in meta.yaml — an undeclared "
-                f"surface with no real runner is indistinguishable from a silent skip.")
-
-    if any(f.get("_sampled") for f in findings):
-        subs = sorted({f["_subject"] for f in findings if f.get("_sampled")})
-        st.notes.append(f"SAMPLED, not exhaustive: {', '.join(subs)}. These may not be "
-                        f"reported clean.")
-
-    single = [f for f in findings if f.get("single_round")]
-    if single:
-        st.notes.append(
-            f"{len(single)} finding(s) came from only ONE of the two passes. That is "
-            f"the cheapest false-positive signal available — verify these first.")
-
-    omissions = sum(1 for f in findings if f.get("relation") == "D9")
-    contradictions = sum(1 for f in findings
-                         if f.get("violation_kind") == "contradiction")
-    if contradictions and not omissions:
-        st.notes.append(
-            "Zero omission findings (D9) alongside "
-            f"{contradictions} contradiction(s). Reviewers are structurally blind to "
-            "omitted preconditions — measured 6/6 contradictions and 0/2 omissions "
-            "before the contract existed. A clean sweep here is more likely a lens "
-            "that skipped the class than a book without it.")
-
-    # Coverage is a TERM OF THE VERDICT, not a note somebody remembers to write.
-    #
-    # A verdict computed only from findings cannot distinguish "we looked at all
-    # of it and it is clean" from "we looked at 6% of it and that 6% is clean".
-    # Those are different states and only one of them is PASS.
-    #
-    # Each criterion is binary rather than a percentage floor, on purpose. A floor
-    # invites arguing the number, and the day the number is expensive it gets
-    # waived out of habit.
-    #
-    # But the two axes are SEPARATE terms, and that separation is load-bearing.
-    # BREADTH — subjects nobody opened — closes on its own as rounds drain the
-    # pool. DEPTH — subjects read only in part — closes only by narrowing them by
-    # hand, and sometimes the honest answer is that the subject really is that
-    # wide. Requiring both for `PASS` made `PASS` unreachable by construction:
-    # 221 of 454 rules on the reference book were over the tractability ceiling.
-    # A criterion nobody can satisfy decays exactly like a floor nobody defends.
-    counting = {c: v for c, v in st.coverage.items() if v.get("counts")}
-    st.breadth_complete = bool(counting) and all(
-        v.get("breadth_complete") for v in counting.values())
-    st.depth_complete = bool(counting) and all(
-        v.get("depth_complete") for v in counting.values())
-    st.breadth_signature = coverage_signature(st.coverage, "breadth")
-    st.depth_signature = coverage_signature(st.coverage, "depth")
-    if not counting:
-        st.breadth_complete = False
-        st.depth_complete = True
-        st.notes.append(
-            "No coverage record for any semantic check. Coverage unknown reads as "
-            "coverage incomplete — that asymmetry is the point.")
-
-    st.verdict = ("BLOCKED" if st.open_critical
-                  else "NEEDS-REVISION" if st.open_major
-                  else "PASS-PARTIAL" if not st.breadth_complete
-                  else "PASS-SAMPLED" if not st.depth_complete
-                  else "PASS")
-
-    if st.verdict == "PASS-PARTIAL":
-        short = [v["label"] for v in counting.values()
-                 if not v.get("breadth_complete")]
-        st.notes.append(
-            "PASS-PARTIAL — no blocking findings, but there are subjects NOBODY "
-            "OPENED: " + " · ".join(short) + ". This does not block the work; it "
-            "blocks the CLAIM. Run another round — the emitters skip what is already "
-            "audited, so this closes by spending rounds — or record a "
-            f"`{COVERAGE_WAIVER}` waiver with signature `{st.breadth_signature}`.")
-    elif st.verdict == "PASS-SAMPLED":
-        short = [f"{v['label']} — {LADDER.get(c, '')}"
-                 for c, v in sorted(counting.items()) if not v.get("depth_complete")]
-        st.notes.append(
-            "PASS-SAMPLED — every subject was opened, but some were judged from a "
-            "SAMPLE of themselves rather than all of it:\n    "
-            + "\n    ".join(short)
-            + f"\n    Narrow them so they fit in one agent run, or record a "
-              f"`{DEPTH_WAIVER}` waiver with signature `{st.depth_signature}`. "
-              f"Narrowing is a claim about a subject's SCOPE — if it really does "
-              f"reach all those instances, waiving is the honest answer, not a "
-              f"smaller number.")
-    for check, v in counting.items():
-        if v.get("not_dispatched"):
-            st.notes.append(
-                f"{check}: {len(v['not_dispatched'])} subject(s) have no findings file "
-                f"— nobody audited them, so they do NOT count as covered: "
-                f"{', '.join(v['not_dispatched'][:6])}"
-                + (" …" if len(v["not_dispatched"]) > 6 else ""))
-        if v.get("state") == "measured" and not v.get("eligible"):
-            st.notes.append(
-                f"{check}: zero eligible candidates. That is full coverage of an empty "
-                f"set, and it is also what a mis-tuned extractor looks like — check "
-                f"the emitter's own report before reading this as clean.")
-
-    # Convergence: zero blocking AND N consecutive quiet rounds. One clean round
-    # is not evidence — finder agents miss things and the defect tail is long.
-    prior_keys = {_key(f) for r in prior_rounds for f in (r.get("finding_keys") or [])}
-    st.new_blocking = sum(
-        1 for f in findings
-        if f.get("relation") in DEFECT_RELATIONS
-        and ((f.get("verification") or {}).get("corrected_severity")
-             or f.get("severity")) in BLOCKING
-        and _key(f) not in prior_keys)
-
-    last_quiet = prior_rounds[-1].get("rounds_without_new", 0) if prior_rounds else 0
-    st.rounds_without_new = 0 if st.new_blocking else last_quiet + 1
-    return st
-
-
-def _key(f: dict) -> str:
-    if isinstance(f, str):
-        return f
-    p1 = (f.get("p1") or {}).get("location") or (f.get("instance") or {}).get("location", "")
-    p2 = (f.get("p2") or {}).get("location", "") if f.get("p2") else ""
-    return f"{f.get('relation')}|{p1}|{p2}|{f.get('_subject', '')}"
-
-
-def converged(st: GateState, cfg: dict) -> bool:
-    """`phase: complete` needs PASS, or a signed waiver for each axis that is short.
-
-    The waiver route is deliberate and deliberately awkward. Partial coverage is
-    a legitimate budget decision on a long book; asserting a clean bill of health
-    over the part nobody read is not. So the book can still finish — but only
-    with a human's name on a waiver that pins the exact numbers.
-
-    Depth is waived separately and is the routine one: on a large technical book
-    some rules genuinely reach more instances than one agent run can judge, and
-    that is a fact about the book rather than a shortfall in the audit. Breadth is
-    the one that should feel expensive, because it means nobody looked.
-    """
-    if st.rounds_without_new < cfg["rounds_without_new_to_close"]:
-        return False
-    if not st.breadth_complete and not st.coverage_waived:
-        return False
-    if not st.depth_complete and not st.depth_waived:
-        return False
-    return True
+            side1 = f.get("p1") or f.get("instance") or {}
+            side2 = f.get("p2") or {}
+            q1, q2 = side1.get("quote") or "", side2.get("quote") or ""
+            key = f"{check}-" + make_key(check, subject, rel,
+                                         q1 or f.get("canonical_site"), q2)
+            ver = f.get("verification") or {}
+            sev = ver.get("corrected_severity") or f.get("severity")
+            rec = out.setdefault(key, {
+                "key": key, "check": check, "kind": "agent", "relation": rel,
+                "subject": subject, "severity": sev,
+                "location": side1.get("location") or f.get("canonical_site", ""),
+                "quote": q1[:200], "detail": str(f.get("reasoning", ""))[:300],
+                "lenses": [], "rounds": [], "passes": [], "files": [],
+                "verification": None, "_ver_round": 0})
+            if SEV_RANK.get(sev, 9) < SEV_RANK.get(rec["severity"], 9):
+                rec["severity"] = sev
+            if f.get("rule") in STORY_RULES:
+                rec["rule"] = f["rule"]
+            if f.get("category"):
+                rec["category"] = f["category"]
+            for field, val in (("lenses", doc.get("lens")), ("rounds", doc["_round"]),
+                               ("passes", doc["_pass"]), ("files", doc["_file"])):
+                if val not in rec[field]:
+                    rec[field].append(val)
+            if ver.get("verdict") and doc["_round"] >= rec["_ver_round"]:
+                rec["verification"] = ver.get("verdict")
+                rec["_ver_round"] = doc["_round"]
+                if ver.get("corrected_severity"):
+                    rec["severity"] = ver["corrected_severity"]
+    return out, positives
 
 
 # ---------------------------------------------------------------------------
+# The cumulative store
+# ---------------------------------------------------------------------------
 
 
-def _read_json(path: Path) -> dict:
+def load_store(run_dir: Path) -> dict[str, dict]:
+    path = run_dir / "findings.jsonl"
     if not path.exists():
         return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+    out: dict[str, dict] = {}
+    for line in read_text(path).splitlines():
+        if line.strip():
+            rec = json.loads(line)
+            out[rec["key"]] = rec
+    return out
 
 
-def gate_config(project: Project) -> dict:
-    cfg = dict(DEFAULTS)
-    raw = project.get("pipeline.manuscript_gate") or {}
-    for k in cfg:
-        if k in raw:
-            cfg[k] = raw[k]
-    cfg["checks"] = raw.get("checks") or {}
-    return cfg
+def save_store(run_dir: Path, store: dict[str, dict]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps({k: v for k, v in rec.items() if not k.startswith("_")},
+                        ensure_ascii=False, sort_keys=True)
+             for _k, rec in sorted(store.items())]
+    (run_dir / "findings.jsonl").write_text("\n".join(lines) + ("\n" if lines else ""),
+                                            encoding="utf-8")
 
 
-def load_state(run_dir: Path) -> list[dict]:
-    p = run_dir / "state.json"
-    return _read_json(p).get("rounds", []) if p.exists() else []
+class TextHashes:
+    """Hashes of the text a finding points at — its unit (from `location`), or
+    the whole manuscript for whole-book subjects (MG-4, MG-C, `manuscript`) —
+    per swept round (state.json) and live. `--resolve fixed` needs the live
+    hash to differ from the one recorded with the finding: evidence that the
+    text was edited, not a declaration."""
+
+    def __init__(self, project: Project | None, state: dict | None):
+        self.project = project
+        self.state = state or {"rounds": {}}
+        self._manuscript: str | None = None
+
+    @staticmethod
+    def unit_of(rec: dict) -> str | None:
+        loc = str(rec.get("location") or "").strip()
+        path = loc.rpartition(":")[0] if re.search(r":\d+$", loc) else loc
+        return path.replace("\\", "/") or None
+
+    def whole_book(self, rec: dict) -> bool:
+        return (rec.get("check") in ("MG-4", "MG-C") or rec.get("subject") == "manuscript"
+                or self.unit_of(rec) is None)
+
+    def live(self, rec: dict) -> str | None:
+        if self.project is None:
+            return None
+        if not self.whole_book(rec):
+            p = self.project.root / str(self.unit_of(rec))
+            if p.is_file():
+                return text_hash(read_text(p))
+        if self._manuscript is None:
+            self._manuscript = manuscript_hash(self.project)
+        return self._manuscript
+
+    def at_round(self, rec: dict, r: int) -> str | None:
+        rnd = self.state["rounds"].get(str(r)) or {}
+        if self.whole_book(rec):
+            return rnd.get("manuscript_hash")
+        return (rnd.get("unit_hashes") or {}).get(str(self.unit_of(rec)))
+
+    def round_manuscript(self, r: int) -> str | None:
+        return (self.state["rounds"].get(str(r)) or {}).get("manuscript_hash")
 
 
-def save_state(run_dir: Path, rounds: list[dict]) -> None:
-    (run_dir / "state.json").write_text(
-        json.dumps({"rounds": rounds}, indent=2, ensure_ascii=False), encoding="utf-8")
+def build_store(prev: dict[str, dict], agent: dict[str, dict], docs: list[dict],
+                det_by_round: dict[int, list[dict]], live: list[dict], round_no: int,
+                exercise_ids: dict[int, str], literary: bool = False,
+                hashes: TextHashes | None = None) -> dict[str, dict]:
+    """Recompute every record from its sources, then lay the human decisions on top.
+
+    Auto status: agent findings stay `open` until the same subject is re-audited
+    (same check and lens) in a LATER round that no longer reports the key, or the
+    verifier REFUTED it. Literary R1/R2 findings (`rule`): the re-audit counts
+    only on a manuscript that changed since the round that reported them, and a
+    verifier's REFUTED does not close them. Tool findings are `open` while the
+    latest sweep still reports them. Human `--resolve` decisions are
+    re-validated (`resolve_refusal`) on every run: `refuted`/`accepted-risk`
+    stick; `fixed` sticks until the key is reported again in a later round (a
+    regression) or the text returns to what the finding described.
+    """
+    hashes = hashes or TextHashes(None, None)
+    store: dict[str, dict] = {}
+    audits: dict[tuple, list[int]] = {}
+    for d in docs:
+        audits.setdefault((d.get("check"), subject_of(d, exercise_ids), d.get("lens")), []).append(d["_round"])
+
+    for key, rec in agent.items():
+        last = max(rec["rounds"])
+        later = [r for lens in rec["lenses"]
+                 for r in audits.get((rec["check"], subject_of({"check": rec["check"], "subject": rec["subject"], "lens": lens}, exercise_ids), lens), [])
+                 if r > last]
+        story_rule = literary and rec.get("rule") in STORY_RULES
+        if story_rule:
+            h_last = hashes.round_manuscript(last)
+            later = [r for r in later if hashes.round_manuscript(r)
+                     and hashes.round_manuscript(r) != h_last]
+        status, note = "open", ""
+        if rec["verification"] == "REFUTED" and not story_rule:
+            status, note = "refuted", "refuted by the adversarial verifier"
+        elif later:
+            status, note = "fixed", f"not reported by the re-audit in round {min(later)}"
+        elif rec["verification"] == "REFUTED":
+            note = (f"a verifier's REFUTED does not close an {rec['rule']} finding — only a "
+                    "re-audit of changed text that no longer reports it")
+        recorded = (prev.get(key) or {}).get("recorded_hash") \
+            or hashes.at_round(rec, min(rec["rounds"])) or hashes.live(rec)
+        store[key] = {**rec, "status": status, "auto_note": note, "recorded_hash": recorded}
+
+    swept = sorted(det_by_round)
+    latest = swept[-1] if swept else round_no
+    for r in swept:
+        for rec in det_by_round[r]:
+            cur = store.setdefault(rec["key"], {**rec, "rounds": []})
+            cur.update({k: rec[k] for k in ("location", "quote", "detail", "severity")})
+            if r not in cur["rounds"]:
+                cur["rounds"].append(r)
+    for rec in live:
+        prior_rounds = (prev.get(rec["key"]) or {}).get("rounds") or []
+        store[rec["key"]] = {**rec, "rounds": sorted(set(prior_rounds) | {round_no})}
+    live_keys = {r["key"] for r in live}
+    for key, rec in store.items():
+        if rec["kind"] == "tool":
+            present = latest in rec["rounds"]
+            rec["status"] = "open" if present else "fixed"
+            rec["auto_note"] = "" if present else f"absent from the round-{latest} sweep"
+        elif rec["kind"] == "config":
+            rec["status"] = "open"
+            rec["auto_note"] = ""
+
+    # Config findings that stopped firing, and records whose source files are gone.
+    for key, old in prev.items():
+        if key in store:
+            continue
+        if old.get("kind") == "config" and key not in live_keys:
+            store[key] = {**old, "status": "fixed", "auto_note": "no longer reported"}
+        elif old.get("kind") == "agent":
+            store[key] = {**old, "source_missing": True}   # persists until resolved
+        elif old.get("kind") == "tool":
+            store[key] = {**old, "status": "fixed", "auto_note": "absent from later sweeps"}
+
+    for key, rec in store.items():
+        rec["first_round"] = min(rec["rounds"]) if rec.get("rounds") else round_no
+        human = (prev.get(key) or {}).get("human")
+        rec["history"] = (prev.get(key) or {}).get("history") or []
+        why = resolve_refusal(rec, (human or {}).get("status"), str((human or {}).get("note") or ""),
+                              literary, hashes.live(rec)) if human else ""
+        if why:
+            rec["human_ignored"] = f"{human.get('status')} ignored: {why}"
+            rec["auto_note"] = rec["human_ignored"]
+            human = None
+        else:
+            rec.pop("human_ignored", None)
+        if human:
+            rec["human"] = human
+            hs = human.get("status")
+            if hs in ("refuted", "accepted-risk", "open"):
+                rec["status"] = hs
+            elif hs == "fixed":
+                if max(rec.get("rounds") or [0]) > int(human.get("round") or 0) and rec["status"] == "open":
+                    rec["auto_note"] = (f"REGRESSED: marked fixed in round {human.get('round')}, "
+                                        f"reported again in round {max(rec['rounds'])}")
+                else:
+                    rec["status"] = "fixed"
+    return store
+
+
+def new_blocking(store: dict[str, dict], r: int) -> int:
+    """Blocking findings a round INTRODUCED. A refuted one was never a defect; one
+    fixed within the same round still means that round was not quiet."""
+    return sum(1 for rec in store.values()
+               if rec.get("first_round") == r and rec.get("severity") in BLOCKING
+               and rec.get("status") != "refuted")
+
+
+def resolve_refusal(rec: dict, status: str | None, note: str, literary: bool,
+                    current_hash: str | None) -> str:
+    """Why a human may NOT set `status` on this finding ('' when allowed). The
+    same rules apply to `--resolve` and to a decision found in findings.jsonl
+    (hand edits are re-validated on every run).
+
+    Deterministic (MG-5, MG-7, MG-S, MG-T): never `fixed` or `refuted` by hand —
+    they close when the sweep stops reporting them; `accepted-risk` only for a
+    non-critical MG-5/MG-T or a minor MG-7; MG-S never. Configuration findings
+    close by fixing the configuration. Agent findings: `fixed` needs a note and
+    a changed text (live hash ≠ `recorded_hash`); `refuted` / `accepted-risk`
+    need a MIN_NOTE-character note that is not a placeholder; no accepted-risk
+    for a critical. Literary R1/R2 findings: nothing by hand.
+    """
+    if status in (None, "open"):
+        return ""
+    kind, check, sev = rec.get("kind"), rec.get("check"), rec.get("severity")
+    real_note = not is_placeholder(note) and len(note.strip()) >= MIN_NOTE
+    if kind == "config":
+        return ("a configuration finding closes when the configuration is fixed "
+                "(a complete waiver, a declared surface), not by --resolve")
+    if status == "accepted-risk" and sev == "critical":
+        return "a critical finding cannot be accepted as a risk — fix it"
+    if kind == "tool":
+        if status in ("fixed", "refuted"):
+            return (f"{check} is deterministic: it closes when the next sweep stops reporting "
+                    "it — fix the text and run the next round (never --status "
+                    f"{status} by hand)")
+        if check == "MG-S":
+            return "MG-S (R1–R4) cannot be accepted as a risk — the rules are not waivable"
+        if not (check in RISK_OK or (check == "MG-7" and sev == "minor")):
+            return (f"{check} ({sev}) cannot be accepted as a risk — only a non-critical "
+                    "MG-5/MG-T or a minor MG-7 can")
+        if not real_note:
+            return f"accepted-risk needs --note: {MIN_NOTE}+ characters of real reasoning"
+        return ""
+    # agent findings
+    if literary and rec.get("rule") in STORY_RULES:
+        return (f"a literary {rec['rule']} finding (an unresolved arc, an undelivered ending) "
+                "closes only when a re-audit of CHANGED text no longer reports it — not by "
+                "--resolve")
+    if status == "fixed":
+        if is_placeholder(note):
+            return "--status fixed needs --note saying what changed and where"
+        if not rec.get("recorded_hash") or current_hash is None:
+            return ("no text hash was recorded with this finding — re-run the round "
+                    "(--verdict-only) before resolving it")
+        if current_hash == rec.get("recorded_hash"):
+            return ("the text this finding points at has not changed since it was recorded — "
+                    "edit it first (fixed is evidence, not a declaration)")
+        return ""
+    if not real_note:
+        return (f"--status {status} needs --note with {MIN_NOTE}+ characters of real "
+                "counter-evidence or reasoning (not a placeholder)")
+    return ""
+
+
+def do_resolve(run_dir: Path, args, literary: bool = False,
+               hashes: TextHashes | None = None) -> int:
+    store = load_store(run_dir)
+    if not store:
+        raise GateError(f"no findings.jsonl in {run_dir} — nothing to resolve")
+    hits = [k for k in store if k == args.resolve] or [k for k in store if k.startswith(args.resolve)]
+    if len(hits) != 1:
+        raise GateError(f"--resolve {args.resolve!r} matches {len(hits)} finding(s) — "
+                        f"give the full key from findings.jsonl")
+    if args.status not in STATUSES:
+        raise GateError(f"--status must be one of {', '.join(STATUSES)}")
+    rec = store[hits[0]]
+    hashes = hashes or TextHashes(None, None)
+    why = resolve_refusal(rec, args.status, args.note or "", literary, hashes.live(rec))
+    if why:
+        raise GateError(f"{rec['key']} ({rec.get('check')} · {rec.get('severity')}): {why}")
+    state = load_state(run_dir)
+    rnd = args.round or max([int(r) for r in state["rounds"]] or [1])
+    rec["human"] = {"status": args.status, "round": rnd, "note": args.note or ""}
+    rec.setdefault("history", []).append({"round": rnd, "status": args.status,
+                                          "note": args.note or "", "by": "human"})
+    rec["status"] = args.status
+    save_store(run_dir, store)
+    print(f"[gate] {rec['key']} ({rec['check']} · {rec.get('severity')}) → {args.status}. "
+          f"Re-run with --verdict-only to recompute the verdict.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Coverage — the subjects manifest
+# ---------------------------------------------------------------------------
+
+
+def exercise_units(project: Project) -> dict[int, str]:
+    """MG-3's subjects: {unit number: unit id}. `unit: 01` is read by YAML as 1,
+    so everything matches on the NUMBER, never the string."""
+    stems = {unit_number(p.stem): p.stem for p in project.unit_paths}
+    outline = project.load_yaml("outline/units.yaml")
+    nums = [unit_number(u.get("id") or u.get("unit") or u.get("slug"))
+            for u in as_list(outline.get("units")) if isinstance(u, dict) and u.get("exercises")]
+    nums = [n for n in nums if n is not None]
+    if not nums and str(project.get("structure.exercises", "none")) not in ("none", "", "None"):
+        nums = [n for n in stems if n is not None]
+    return {n: stems.get(n, f"unit-{n:02d}") for n in sorted(set(nums))}
+
+
+def round_subjects(project: Project, run_dir: Path, state: dict, check: str, r: int,
+                   exercise_ids: dict[int, str]) -> dict | None:
+    """{subject_id: {hash, sampled, ...}} for a check as of round r, None if unknown."""
+    if check in ("MG-1", "MG-2"):
+        rec = read_json(coverage_path(run_dir / f"round-{r}", check))
+        if rec is None:
+            return None
+        if rec.get("blocked"):
+            return {"blocked": {"hash": "", "sampled": False, "blocked": rec["blocked"]}}
+        return {s["id"]: s for s in rec.get("eligible") or []}
+    mh = (state["rounds"].get(str(r)) or {}).get("manuscript_hash")
+    if not mh:
+        return None
+    ids = (list(exercise_ids.values()) if check == "MG-3"
+           else ["continuity", "developmental"] if check == "MG-C" else ["manuscript"])
+    return {i: {"id": i, "hash": mh, "sampled": False} for i in ids}
+
+
+def compute_coverage(project: Project, run_dir: Path, state: dict, docs: list[dict],
+                     round_no: int, checks: list[str], cfg: dict, blocked: dict[str, str],
+                     exercise_ids: dict[int, str]) -> dict[str, dict]:
+    """Per agent check: every eligible subject's state, from the evidence on disk."""
+    out: dict[str, dict] = {}
+    for check in checks:
+        if check not in AGENT_CHECKS:
+            if check in blocked:
+                out[check] = {"entries": {"blocked": {"state": "pending", "reason": "blocked",
+                                                      "detail": blocked[check]}}}
+            continue
+        if check == "MG-3" and not exercise_ids:
+            out[check] = {"na": "this project has no exercises", "entries": {}}
+            continue
+        current = round_subjects(project, run_dir, state, check, round_no, exercise_ids)
+        if current is None:
+            out[check] = {"entries": {"blocked": {
+                "state": "pending", "reason": "blocked",
+                "detail": f"no coverage record for round {round_no} — run the round without "
+                          f"--verdict-only"}}}
+            continue
+        if "blocked" in current:
+            out[check] = {"entries": {"blocked": {"state": "pending", "reason": "blocked",
+                                                  "detail": current["blocked"]["blocked"]}}}
+            continue
+        required = (int(cfg["passes_per_subject"]) if check in ("MG-1", "MG-2")
+                    else max(2, int(cfg["passes_per_subject"]))
+                    if project.literary and check in ("MG-4", "MG-C") else 1)
+        by_round: dict[int, dict] = {}
+        ev: dict[str, list[dict]] = {}
+        for d in docs:
+            if d.get("check") == check:
+                ev.setdefault(subject_of(d, exercise_ids), []).append(d)
+        entries: dict[str, dict] = {}
+        for sid, subj in sorted(current.items()):
+            files = ev.get(sid, [])
+            if not files:
+                entries[sid] = {"state": "pending", "reason": "never-audited", "hash": subj["hash"]}
+                continue
+            ra = max(d["_round"] for d in files)
+            if ra not in by_round:
+                by_round[ra] = round_subjects(project, run_dir, state, check, ra, exercise_ids) or {}
+            h_a = (by_round[ra].get(sid) or {}).get("hash")
+            if not h_a:
+                entries[sid] = {"state": "pending", "reason": "audited-text-unknown",
+                                "hash": subj["hash"], "round": ra}
+                continue
+            same = []
+            for d in files:
+                if d["_round"] not in by_round:
+                    by_round[d["_round"]] = round_subjects(project, run_dir, state, check,
+                                                           d["_round"], exercise_ids) or {}
+                if (by_round[d["_round"]].get(sid) or {}).get("hash") == h_a:
+                    same.append(d)
+            passes = sorted({d["_pass"] for d in same})
+            sampled = any(d.get("sampled") for d in same) or bool(
+                (by_round[ra].get(sid) or {}).get("sampled"))
+            entry = {"hash": subj["hash"], "round": ra, "passes": passes,
+                     "state": f"{'sampled' if sampled else 'audited'}@{h_a}"}
+            if h_a != subj["hash"]:
+                entry.update(state="pending", reason="edited-since-audit")
+            elif len(passes) < required:
+                entry.update(state="pending", reason=f"passes {len(passes)}/{required}")
+            entries[sid] = entry
+        out[check] = {"entries": entries}
+    return out
+
+
+def coverage_summary(cov: dict[str, dict]) -> dict:
+    pending = {c: sorted(i for i, e in v["entries"].items() if e["state"] == "pending")
+               for c, v in cov.items()}
+    sampled = {c: sorted(i for i, e in v["entries"].items() if e["state"].startswith("sampled@"))
+               for c, v in cov.items()}
+    lines = sorted([f"pending:{c}:{i}" for c, ids in pending.items() for i in ids]
+                   + [f"sampled:{c}:{i}" for c, ids in sampled.items() for i in ids])
+    sig = ("cov:" + hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:12]) if lines else ""
+    return {"pending": pending, "sampled": sampled, "signature": sig,
+            "complete": not lines}
+
+
+def coverage_label(check: str, v: dict) -> str:
+    if v.get("na"):
+        return f"{check} n/a ({v['na']})"
+    e = v["entries"]
+    if "blocked" in e:
+        return f"{check} BLOCKED — {e['blocked']['detail']}"
+    done = sum(1 for x in e.values() if x["state"].startswith(("audited@", "sampled@")))
+    reasons: dict[str, int] = {}
+    for x in e.values():
+        if x["state"] == "pending":
+            reasons[x["reason"]] = reasons.get(x["reason"], 0) + 1
+    samp = sum(1 for x in e.values() if x["state"].startswith("sampled@"))
+    tail = ", ".join(f"{n} {r}" for r, n in sorted(reasons.items()))
+    return (f"{check} {done}/{len(e)} audited" + (f" ({samp} sampled)" if samp else "")
+            + (f" — pending: {tail}" if tail else ""))
+
+
+# ---------------------------------------------------------------------------
+# Outputs: GROUNDING.md, PLAN.md, REPORT.md
+# ---------------------------------------------------------------------------
+
+
+def _doc_section(text: str, heading: str) -> str:
+    m = re.search(rf"^## {re.escape(heading)}\b.*?(?=^## |\Z)", text, re.M | re.S)
+    return m.group(0).strip() if m else ""
+
+
+def write_grounding(project: Project, run_dir: Path, store: dict[str, dict]) -> None:
+    """GROUNDING.md — what every auditor reads first. Regenerated every run."""
+    spec = HERE.parent / "references" / "manuscript-gate.md"
+    spec_text = read_text(spec) if spec.exists() else ""
+    L = [f"# GROUNDING — {project.root.name} · manuscript gate", "",
+         "<!-- generated by scripts/manuscript_gate.py on every run; do not edit -->", "",
+         "Read this completely before auditing. It overrides your judgement and your memory.", "",
+         f"- Profile: `{project.profile or 'unknown'}` · language: `{project.language_variant}`"]
+    sources = sorted((project.root / "bible" / "sources").glob("**/*.md"))
+    if sources:
+        L.append(f"- Authority: `bible/sources/` ({len(sources)} file(s)). When the book and a "
+                 f"source disagree the source wins — unless it is version drift, reported as "
+                 f"drift. Cite path:line and a verbatim quote.")
+    else:
+        L.append("- Authority: no `bible/sources/`. Do not adjudicate against memory; what "
+                 "you cannot settle goes to `deferred`.")
+    L += ["- Voice is not a defect: the project's signed register (bible/voice-profile.md) — "
+          "rhetorical absolutes, second person, humor, short sentences — is out of scope. An "
+          "absolute about how the system (or the story world) behaves is a claim.", ""]
+    for heading in ("The finding taxonomy", "False-positive suppressors"):
+        sec = _doc_section(spec_text, heading)
+        L += [sec if sec else f"## {heading}\n\nSee references/manuscript-gate.md § {heading}.", ""]
+    accepted = [r for r in store.values() if r.get("status") in ("refuted", "accepted-risk")]
+    L += ["## Accepted items — do not re-report", ""]
+    L += ([f"- `{r['key']}` {r['check']} {r.get('relation')} at `{r.get('location')}` — "
+           f"{r['status']}: {(r.get('human') or {}).get('note') or r.get('auto_note', '')}"
+           for r in sorted(accepted, key=lambda r: r["key"])] or ["_None yet._"])
+    L.append("")
+    dnt = project.root / "bible" / "do-not-touch.md"
+    L += ["## DO-NOT-TOUCH anchors", ""]
+    if dnt.exists():
+        anchors = _doc_section(read_text(dnt), "Anchors")
+        L += [anchors or read_text(dnt).strip(), ""]
+    idx = project.load_yaml("bible/claim-index.yaml")
+    guarded = [(cid, c) for cid, c in (idx.get("concepts") or {}).items()
+               if isinstance(c, dict) and (c.get("do_not_touch") or c.get("verified_against"))]
+    L += [f"- concept `{cid}`: " + ("DO-NOT-TOUCH. " if c.get("do_not_touch") else "")
+          + (f"verified against {c['verified_against']}. " if c.get("verified_against") else "")
+          + str(c.get("note") or "").strip() for cid, c in guarded]
+    if not dnt.exists() and not guarded:
+        L.append("_None recorded._")
+    (run_dir / "GROUNDING.md").write_text("\n".join(L).rstrip() + "\n", encoding="utf-8")
+
+
+def append_verification_plan(project: Project, docs: list[dict], round_no: int) -> int:
+    """Checkable `deferred` items → reviews/verification-plan/PLAN.md, APPEND-ONLY.
+
+    The plan is where results are written by hand; regenerating it deleted them.
+    New questions are inserted before "What was left out"; nothing existing moves.
+    """
+    items: list[dict] = []
+    for d in docs:
+        for q in d.get("deferred") or []:
+            if q.get("needs") in CHECKABLE_NEEDS:
+                items.append({**q, "_check": d.get("check"), "_subject": d.get("subject")})
+    if not items:
+        return 0
+    path = project.reviews / "verification-plan" / "PLAN.md"
+    text = read_text(path) if path.exists() else ""
+    known = {norm(m.group(2)) for m in re.finditer(r"^### V-(\d+) — (.+)$", text, re.M)}
+    n = max([int(m) for m in re.findall(r"^### V-(\d+)", text, re.M)] or [0])
+    new, seen = [], set()
+    for q in items:
+        k = norm(str(q.get("question", "")))
+        if k and k not in known and k not in seen:
+            seen.add(k)
+            new.append(q)
+    if not new:
+        return 0
+    L = [f"## Added by the gate, round {round_no}", ""]
+    for q in sorted(new, key=lambda q: (q["needs"], str(q.get("question")))):
+        n += 1
+        L += [f"### V-{n:02d} — {q.get('question')}", "",
+              f"- **Needs:** {q['needs']} · **From:** {q['_check']} · {q['_subject']}",
+              f"- **Claim:** {', '.join(as_list(q.get('sites'))) or '—'}",
+              f"- **Why unresolved:** {q.get('why_unresolved', '—')}",
+              f"- **How to check:** {q.get('how_to_check') or '**TODO** — an entry nobody can execute is not run'}",
+              f"- **What the book expects:** {q.get('expected') or '**TODO**'}",
+              f"- **Suspect a defect if:** {q.get('defect_if') or '**TODO** — write it BEFORE checking'}",
+              "", "**Actual result:**", "", "", "---", ""]
+    block = "\n".join(L)
+    if not text:
+        text = ("# Verification plan\n\nGenerated from the gate's `deferred` items and then "
+                "maintained BY HAND: the gate only ever appends. Fill `**Actual result:**` "
+                "with literal values, or `NOT RUN` and why. See "
+                "references/verification-plan.md and templates/verification-plan.md.\n\n"
+                "---\n\n" + block + "\n## What was left out, and why\n\n"
+                "| Area | Why unchecked | What would change that |\n|---|---|---|\n")
+    else:
+        marker = re.search(r"^## What was left out", text, re.M)
+        text = (text[:marker.start()] + block + "\n" + text[marker.start():]
+                if marker else text.rstrip() + "\n\n" + block)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return len(new)
+
+
+BEGIN = "<!-- BEGIN computed by scripts/manuscript_gate.py"
+END = "<!-- END computed -->"
+
+
+def write_report(project: Project, round_dir: Path, block: list[str]) -> Path:
+    """round-N/REPORT.md: the computed block is replaced; everything else survives."""
+    path = round_dir / "REPORT.md"
+    computed = "\n".join(block + [END])
+    if path.exists():
+        text = read_text(path)
+        s, e = text.find(BEGIN), text.find(END)
+        text = (text[:s] + computed + text[e + len(END):]) if s != -1 and e != -1 \
+            else computed + "\n\n" + text
+    else:
+        tpl = HERE.parent / "templates" / "manuscript-gate-report.md"
+        body = read_text(tpl) if tpl.exists() else ""
+        e = body.find(END)
+        text = computed + ("\n" + body[e + len(END):] if e != -1 else "\n")
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def parse_args(argv):
+    ap = argparse.ArgumentParser(description="Phase 4.5 manuscript gate.")
+    add_common_args(ap)
+    ap.add_argument("--round", type=int, default=None,
+                    help="Round number. Default: the latest recorded round, or 1.")
+    ap.add_argument("--run-dir", default=None,
+                    help="Run directory. Default: reviews/manuscript-gate-<--date>/, else "
+                         "the latest existing run, else reviews/manuscript-gate-current/.")
+    ap.add_argument("--date", default=None, help="Stamp for the run directory (YYYY-MM-DD).")
+    ap.add_argument("--deterministic-only", action="store_true",
+                    help="Deterministic checks only, into <run>/deterministic-only/. Touches "
+                         "no round, no store. Exit 1 on an open critical/major.")
+    ap.add_argument("--verdict-only", action="store_true",
+                    help="Recompute from the findings on disk; sweep and prepare nothing.")
+    ap.add_argument("--top-concepts", type=int, default=None)
+    ap.add_argument("--top-rules", type=int, default=None)
+    ap.add_argument("--resolve", metavar="KEY", default=None,
+                    help="Set a finding's status in findings.jsonl (with --status, --note).")
+    ap.add_argument("--status", choices=STATUSES, default=None)
+    ap.add_argument("--note", default="")
+    return ap.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Phase 4.5 manuscript gate.")
-    add_common_args(ap)
-    ap.add_argument("--round", type=int, default=1)
-    ap.add_argument("--run-dir", default=None,
-                    help="Defaults to reviews/manuscript-gate-<date>/. Pass --date or "
-                         "this explicitly; the script never reads the clock, so that a "
-                         "re-run lands in the same place.")
-    ap.add_argument("--date", default=None, help="YYYY-MM-DD for the run directory.")
-    ap.add_argument("--deterministic-only", action="store_true",
-                    help="MG-5 + claim index + MG-6 only. Fast; run any time.")
-    ap.add_argument("--verdict-only", action="store_true",
-                    help="Recompute the verdict from existing findings; prepare nothing.")
-    # Cost dials, overridable per run. `pipeline.manuscript_gate` in meta.yaml is
-    # the normal home, but a standalone run over a book written by an earlier
-    # version has no such block — and defaults sized for a v3 project mean a few
-    # hundred agent runs on a first pass. Start small, calibrate, then scale.
-    ap.add_argument("--top-concepts", type=int, default=None,
-                    help="Override pipeline.manuscript_gate.top_concepts for this run.")
-    ap.add_argument("--top-rules", type=int, default=None,
-                    help="Override pipeline.manuscript_gate.top_rules for this run.")
-    args = ap.parse_args(argv)
+    args = parse_args(argv)
+    try:
+        return _main(args)
+    except GateError as exc:
+        print(f"[gate] ERROR {exc}")
+        return 2
 
+
+def store_truncation(run_dir: Path, state: dict, store: dict[str, dict]) -> str:
+    """'' unless findings.jsonl lost keys an earlier round recorded in
+    state.json. The store only ever grows (a closed finding stays, with its
+    status): a missing key means the file was truncated, replaced or deleted."""
+    recorded: set[str] = set()
+    for r in (state.get("rounds") or {}).values():
+        recorded |= set(r.get("store_keys") or [])
+    missing = sorted(recorded - set(store))
+    if not missing:
+        return ""
+    return (f"findings store truncated: {len(missing)} finding(s) recorded in state.json are "
+            f"missing from {run_dir.name}/findings.jsonl ({', '.join(missing[:5])}"
+            f"{'…' if len(missing) > 5 else ''}) — restore findings.jsonl (version control), or "
+            "start a new run directory (--date); the gate does not forget findings")
+
+
+def _main(args) -> int:
     project = load_project(args.root, args.units)
+    for problem in (LX.schema_problem(project.meta), LX.profile_problem(project.meta)):
+        if problem:
+            raise GateError(problem)
     cfg = gate_config(project)
-    if args.top_concepts is not None:
-        cfg["top_concepts"] = args.top_concepts
-    if args.top_rules is not None:
-        cfg["top_rules"] = args.top_rules
+    for k, v in (("top_concepts", args.top_concepts), ("top_rules", args.top_rules)):
+        if v is not None:
+            cfg[k] = v
+    run_dir = resolve_run_dir(project, args)
+    if args.resolve:
+        if not args.status:
+            raise GateError("--resolve needs --status")
+        state0 = load_state(run_dir)
+        why = store_truncation(run_dir, state0, load_store(run_dir))
+        if why:
+            raise GateError(why)
+        return do_resolve(run_dir, args, project.literary, TextHashes(project, state0))
+
     unit_args = ["--root", str(project.root)]
-    for u in (args.units or []):
+    for u in args.units or []:
         unit_args += ["--units", u]
-
-    if args.run_dir:
-        run_dir = Path(args.run_dir)
-    else:
-        stamp = args.date or _existing_run_stamp(project) or "current"
-        run_dir = project.reviews / f"manuscript-gate-{stamp}"
-    round_dir = run_dir / f"round-{args.round}"
-    round_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"[gate] {project.root.name} · round {args.round}/{cfg['max_rounds']} · {run_dir}")
-
-    det = {} if args.verdict_only else deterministic_sweep(project, round_dir, unit_args)
-    if args.verdict_only:
-        det = {"lint_render": _read_json(round_dir / "lint-render.json"),
-               "claim_index": _read_json(round_dir / "claim-index.json"),
-               "anchors": _read_json(round_dir / "anchors.json"),
-               "fixed_defects": _read_json(round_dir / "fixed-defects.json")}
-    runners = audit_runners(project)
-    (round_dir / "runners.json").write_text(
-        json.dumps(runners, indent=2, ensure_ascii=False), encoding="utf-8")
+    checks = applicable_checks(project)
+    errors: list[str] = []
+    notes: list[str] = list(cfg["_notes"])
+    live, waived, cfg_notes = config_records(project, cfg, checks)
+    notes += cfg_notes
+    active = [c for c in checks if cfg["checks"].get(c) is not False
+              or (project.literary and c in LITERARY_ALWAYS_ON)]
 
     if args.deterministic_only:
-        _print_deterministic(det, runners)
-        return 0
+        out = sweep(project, run_dir / "deterministic-only", unit_args, active, errors)
+        recs = det_records(out) + live
+        crit = sum(1 for r in recs if r["severity"] == "critical")
+        major = sum(1 for r in recs if r["severity"] == "major")
+        print(f"[gate] deterministic-only · {project.root.name} · {run_dir / 'deterministic-only'}")
+        _print_sweep(out, recs)
+        for b, why in out["blocked"].items():
+            print(f"[gate] {b} BLOCKED — {why}")
+        # Config-derived findings (an executable surface with no runner, a check
+        # disabled without a waiver) have no report file of their own. Counting
+        # them without naming them sends the reader hunting through JSON files
+        # that do not contain them.
+        for r in live:
+            print(f"[gate] {r['check']} {r['severity']}: {r.get('detail') or r.get('subject')}")
+        for n in notes:
+            print(f"[gate] note: {n}")
+        for e in errors:
+            print(f"[gate] ERROR {e}")
+        print(f"[gate] deterministic: {crit} critical · {major} major open")
+        return 2 if errors else (1 if crit or major else 0)
 
-    prior = load_state(run_dir)
-    ledger_path = run_dir / "audited.yaml"
+    state = load_state(run_dir)
+    state.update({"schema_version": "2.0", "profile": project.profile,
+                  "run_dir": project.rel(run_dir)})
+    rounds = [int(r) for r in state["rounds"]]
+    round_no = args.round or (max(rounds) if rounds else 1)
+    round_dir = run_dir / f"round-{round_no}"
+    rkey = str(round_no)
+    exercise_ids = {} if project.literary else exercise_units(project)
+    live_hash = manuscript_hash(project)
+    print(f"[gate] {project.root.name} · {project.profile or 'no profile'} · "
+          f"round {round_no}/{cfg['max_rounds']} · {project.rel(run_dir)}")
+    if project.literary:
+        print("[gate] literary profile: MG-1, MG-2, MG-3, MG-6 are n/a (profile); "
+              "MG-S, MG-T, MG-C apply — references/manuscript-gate-literary.md")
+
     todo: list[str] = []
+    if not args.verdict_only and round_no > int(cfg["max_rounds"]):
+        raise GateError(f"round {round_no} is beyond max_rounds {cfg['max_rounds']}: the gate "
+                        "does not relax. Produce the escalation packet "
+                        "(references/loopback-handoff.md), set `phase: "
+                        "blocked-on-manuscript-gate`, and let the human decide.")
     if not args.verdict_only:
-        prop = propagation_set(project, det.get("claim_index") or {}) if args.round > 1 else []
-        if prop:
-            (round_dir / "propagation.json").write_text(
-                json.dumps({"sites": prop}, indent=2), encoding="utf-8")
-        todo = prepare_inputs(project, round_dir, unit_args, cfg, prop,
-                              args.round, ledger_path)
+        if list((round_dir / "findings").glob("*.json")):
+            raise GateError(f"round {round_no} already has findings files — re-preparing it "
+                            f"would re-hash its subjects under them. Run --round {round_no} "
+                            f"--verdict-only, or start --round {round_no + 1}.")
+        out = sweep(project, round_dir, unit_args, active, errors)
+        write_json(round_dir / "deterministic.json",
+                   {"records": det_records(out), "blocked": out["blocked"],
+                    "manuscript_hash": live_hash})
+        state["rounds"][rkey] = {**state["rounds"].get(rkey, {}), "swept": True,
+                                 "manuscript_hash": live_hash,
+                                 "unit_hashes": {project.rel(p): text_hash(read_text(p))
+                                                 for p in project.unit_paths}}
+        _print_sweep(out, det_records(out))
+        if not project.literary:
+            docs0, _ = read_finding_docs(run_dir, round_no)
+            pre = compute_coverage(project, run_dir, state, docs0, max(round_no - 1, 1),
+                                   [c for c in active if c in ("MG-1", "MG-2")], cfg, {},
+                                   exercise_ids) if round_no > 1 else {}
+            save_manifest(run_dir / "subjects.json",
+                          {c: v["entries"] for c, v in pre.items() if "blocked" not in v["entries"]})
+            prepare(project, round_dir, run_dir, unit_args, cfg, round_no, active, errors)
+    else:
+        det = read_json(round_dir / "deterministic.json")
+        if det is None or not (state["rounds"].get(rkey) or {}).get("swept"):
+            errors.append(f"round {round_no} was never swept — run it without --verdict-only first")
 
-    docs = read_finding_docs(round_dir)
-    findings = read_findings(round_dir)
-    ledger = load_ledger(ledger_path)
-    coverage = check_coverage(project, round_dir, cfg, docs, ledger)
-    st = compute_verdict(findings, det.get("lint_render") or {}, runners, prior, cfg,
-                         coverage, det.get("fixed_defects") or {})
-    st.round = args.round
-    st.coverage_waived, note_b = find_waiver(project, COVERAGE_WAIVER,
-                                             st.breadth_signature)
-    st.depth_waived, note_d = find_waiver(project, DEPTH_WAIVER, st.depth_signature)
-    for note in (note_b, note_d):
-        if note:
-            st.notes.append(note)
+    docs, doc_errors = read_finding_docs(run_dir, round_no)
+    errors += doc_errors
+    det_by_round: dict[int, list[dict]] = {}
+    blocked: dict[str, str] = {}
+    for r in swept_rounds(state, round_no):
+        d = read_json(run_dir / f"round-{r}" / "deterministic.json")
+        if d is None:
+            errors.append(f"round-{r}/deterministic.json is missing — re-run round {r}")
+            continue
+        det_by_round[r] = d.get("records") or []
+        if r == round_no:
+            blocked = d.get("blocked") or {}
+    agent, positives = agent_records(docs, exercise_ids)
+    prev_store = load_store(run_dir)
+    truncated = store_truncation(run_dir, state, prev_store)
+    if truncated:
+        errors.append(truncated)
+    store = build_store(prev_store, agent, docs, det_by_round, live, round_no,
+                        exercise_ids, project.literary, TextHashes(project, state))
+    for r in store.values():
+        if r.get("human_ignored"):
+            notes.append(f"{r['key']}: human decision {r['human_ignored']}")
 
-    # Persist what this round actually audited, so the next one selects the NEXT
-    # slice instead of re-reading this one. Written from the findings files, not
-    # from what was dispatched: a subject nobody filed for was not audited.
-    ledger = update_ledger(ledger, round_dir, docs, args.round)
-    save_ledger(ledger_path, ledger)
+    cov = compute_coverage(project, run_dir, state, docs, round_no,
+                           [c for c in active if c not in waived], cfg, blocked, exercise_ids)
+    for c in ("MG-1", "MG-2"):
+        rec = read_json(coverage_path(round_dir, c)) or {}
+        notes += [f"{c}: {n}" for n in rec.get("notes") or []]
+        if rec and rec.get("mode") not in (None, "", "lexicon"):
+            notes.append(f"{c}: no language pack for `{rec.get('language')}` — ran in "
+                         f"`{rec.get('mode')}` mode; add scripts/lexicons/{rec.get('language')}.yaml")
+    save_manifest(run_dir / "subjects.json", {c: v["entries"] for c, v in cov.items()})
+    cs = coverage_summary(cov)
+    ladder = {"MG-1": "raise `home_cap` on its probe in bible/concept-probes-tuned.yaml",
+              "MG-2": "narrow it in bible/rule-probes-tuned.yaml (worklist: "
+                      "round-N/rule-probes-proposed.yaml)"}
+    for c, ids in cs["sampled"].items():
+        if ids and c in ladder:
+            notes.append(f"{c}: {len(ids)} subject(s) judged from a SAMPLE — {ladder[c]}, or, "
+                         f"if it really is that wide, accept it under the coverage waiver.")
 
-    deferred = collect_deferred(round_dir)
-    st.deferred = len(deferred)
-    plan_path = project.reviews / "verification-plan" / "PLAN.md"
-    n_checkable = emit_verification_plan(deferred, plan_path)
-    if n_checkable:
-        st.notes.append(
-            f"{n_checkable} unsettled question(s) that reality could answer → "
-            f"skeleton at {project.rel(plan_path)}. Unresolved here is usually not "
-            f"unknowable, just unknown in this session; write the check down rather "
-            f"than softening the claim or asserting it anyway.")
+    story_now = ""
+    if project.literary and not errors:
+        story_now = live_story_check(project, run_dir, errors)
+    open_ = [r for r in store.values() if r.get("status") == "open"]
+    n_crit = sum(1 for r in open_ if r.get("severity") == "critical")
+    n_major = sum(1 for r in open_ if r.get("severity") == "major")
+    n_minor = sum(1 for r in open_ if r.get("severity") == "minor")
+    verdict = ("ERROR" if errors else "BLOCKED" if n_crit else "NEEDS-REVISION" if n_major
+               else "PASS-PARTIAL" if not cs["complete"] else "PASS")
+    ws = waivers(project)
+    cov_waivers = [w for w in ws if w.get("check") == COVERAGE_WAIVER and not waiver_problem(w)]
+    waiver_ok = bool(cs["signature"]) and any(
+        str(w.get("signature", "")) == cs["signature"] for w in cov_waivers)
+    if cov_waivers and cs["signature"] and not waiver_ok:
+        notes.append(f"A `{COVERAGE_WAIVER}` waiver exists but no signature matches "
+                     f"`{cs['signature']}` — it was written for different pending/sampled "
+                     f"sets. Re-read them and update it, or drop it.")
+    # Literary: the whole-book read (MG-4) and the continuity/developmental audit
+    # (MG-C) are how R2 is checked on the page — no coverage waiver covers them.
+    unwaivable = sorted(f"{c}:{i}" for c in ("MG-4", "MG-C") if project.literary
+                        for i in cs["pending"].get(c, []) + cs["sampled"].get(c, []))
+    if unwaivable and waiver_ok:
+        waiver_ok = False
+        notes.append(f"the `{COVERAGE_WAIVER}` waiver does not cover {', '.join(unwaivable)}: in "
+                     "book-literary MG-4 and MG-C are read in full (two passes on the current "
+                     "manuscript) — they are part of R2")
 
-    summary_path = round_dir / "coverage-summary.md"
-    emit_coverage_summary(st, cfg, det, runners, docs, summary_path)
+    swept = swept_rounds(state, round_no)
+    nb = {r: new_blocking(store, r) for r in swept}
+    need = int(cfg["rounds_without_new_to_close"])
+    quiet = swept[-need:] if len(swept) >= need else []
+    stale = live_hash != (state["rounds"].get(rkey) or {}).get("manuscript_hash")
+    if stale:
+        notes.append("final/ changed since this round's sweep: the deterministic results and "
+                     "the whole-book hashes describe older text. Start the next round.")
+    reason = ("ERROR" if errors else f"verdict {verdict}" if verdict in ("BLOCKED", "NEEDS-REVISION")
+              else f"PASS-PARTIAL: book-literary needs MG-4 and MG-C fully audited (pending "
+                   f"{', '.join(unwaivable)}) — no waiver covers them"
+              if verdict == "PASS-PARTIAL" and unwaivable
+              else f"PASS-PARTIAL needs a `{COVERAGE_WAIVER}` waiver signed `{cs['signature']}`"
+              if verdict == "PASS-PARTIAL" and not waiver_ok
+              else "final/ changed since the sweep" if stale
+              else story_now if story_now
+              else f"need {need} consecutive swept rounds with no new blocking finding "
+                   f"(have {len(swept)} swept; new blocking by round: "
+                   f"{', '.join(f'r{r}={nb[r]}' for r in swept) or '—'})"
+              if not quiet or any(nb[r] for r in quiet) else "")
+    converged = not reason
 
-    print()
-    _print_deterministic(det, runners)
-    print(f"[gate] findings read: {len(findings)} "
-          f"({st.positives} verified-correct, {st.deferred} deferred)")
-    print(f"[gate] open: {st.open_critical} critical · {st.open_major} major · "
-          f"{st.open_minor} minor · new blocking this round: {st.new_blocking}")
-    print(f"[gate] coverage: {coverage_header(st)}")
-    for note in st.notes:
-        print(f"[gate] NOTE {note}")
+    recorded_keys: set[str] = set()
+    for r in state["rounds"].values():
+        recorded_keys |= set(r.get("store_keys") or [])
+    state["rounds"][rkey] = {**state["rounds"].get(rkey, {}), "verdict": verdict,
+                             "open": {"critical": n_crit, "major": n_major, "minor": n_minor},
+                             "new_blocking": nb.get(round_no, 0), "signature": cs["signature"],
+                             "coverage": {c: coverage_label(c, v) for c, v in cov.items()},
+                             "errors": errors, "converged": converged,
+                             "store_keys": sorted(set(store) | recorded_keys),
+                             "store_count": len(store)}
+    for r in swept:
+        state["rounds"][str(r)]["new_blocking"] = nb[r]
+    state["latest"] = {"round": round_no, "verdict": verdict, "converged": converged,
+                       "open_critical": n_crit, "open_major": n_major,
+                       "coverage_signature": cs["signature"]}
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_json(run_dir / "state.json", state)
+    if not truncated:                    # never overwrite the evidence of a truncated store
+        save_store(run_dir, store)
+    write_grounding(project, run_dir, store)
+    n_plan = append_verification_plan(project, docs, round_no)
+    if n_plan:
+        notes.append(f"{n_plan} new checkable question(s) appended to "
+                     f"reviews/verification-plan/PLAN.md (existing entries untouched).")
+    todo = dispatch_list(project, round_dir, cov, cfg)
 
-    print(f"\n[gate] VERDICT: {st.verdict}")
-    print(f"[gate] report header + What-ran table (computed) → "
-          f"{project.rel(summary_path)}")
-    if converged(st, cfg):
-        waived = [w for w, ok in ((COVERAGE_WAIVER, not st.breadth_complete),
-                                  (DEPTH_WAIVER, not st.depth_complete)) if ok]
-        how = st.verdict + (f" with a {' and '.join(waived)} waiver" if waived else "")
-        print(f"[gate] CONVERGED — {how} with {st.rounds_without_new} consecutive "
-              f"round(s) with no new blocking findings. The book can reach `complete`.")
-    elif st.verdict == "PASS-PARTIAL":
-        need = max(cfg["rounds_without_new_to_close"] - st.rounds_without_new, 0)
-        print(f"[gate] NOT converged — no blocking findings, but there are subjects "
-              f"nobody opened. Run another round: the emitters skip what is already "
-              f"in audited.yaml, so breadth grows monotonically. "
-              + (f"({need} more quiet round(s) also needed.) " if need else "")
-              + f"To finish here instead, add a `{COVERAGE_WAIVER}` waiver with "
-                f"signature `{st.breadth_signature}`.")
-    elif st.verdict == "PASS-SAMPLED":
-        need = max(cfg["rounds_without_new_to_close"] - st.rounds_without_new, 0)
-        print(f"[gate] NOT converged — every subject was opened, but some were read "
-              f"only in part. Narrow them (see the notes above for where), "
-              + (f"or wait {need} more quiet round(s), " if need else "")
-              + f"or add a `{DEPTH_WAIVER}` waiver with signature "
-                f"`{st.depth_signature}`.")
-    elif st.verdict == "PASS":
-        need = cfg["rounds_without_new_to_close"] - st.rounds_without_new
-        print(f"[gate] NOT converged — PASS, but {need} more quiet round(s) needed. "
-              f"One clean round is not evidence; finder agents miss things.")
-    elif args.round >= cfg["max_rounds"]:
-        print(f"[gate] MAX ROUNDS REACHED without converging. Do NOT relax the "
-              f"criterion. Produce the escalation packet "
-              f"(references/loopback-handoff.md shape) and set "
-              f"`phase: blocked-on-manuscript-gate`.")
+    omissions = sum(1 for r in store.values() if r.get("relation") == "D9")
+    contradictions = sum(1 for r in store.values() if r.get("relation") in ("D1", "D6"))
+    if contradictions and not omissions and not project.literary:
+        notes.append(f"Zero omission findings (D9) alongside {contradictions} contradiction(s). "
+                     f"Reviewers are structurally blind to omitted preconditions — a clean "
+                     f"sweep here is more likely a lens that skipped the class.")
+    single = [r for r in open_ if r.get("kind") == "agent" and len(r.get("passes") or []) == 1
+              and r.get("check") in ("MG-1", "MG-2") and int(cfg["passes_per_subject"]) > 1]
+    if single:
+        notes.append(f"{len(single)} open finding(s) came from only ONE pass — the cheapest "
+                     f"false-positive signal; verify these first.")
 
+    block = report_block(project, round_no, cfg, verdict, converged, reason, store, cov, cs,
+                         waiver_ok, state, swept, nb, positives, todo, errors, notes)
+    round_dir.mkdir(parents=True, exist_ok=True)
+    report = write_report(project, round_dir, block)
+
+    print(f"[gate] findings: {n_crit} critical · {n_major} major · {n_minor} minor open "
+          f"({len(store)} in {project.rel(run_dir / 'findings.jsonl')}, "
+          f"{sum(positives.values())} verified-correct)")
+    for c, v in cov.items():
+        print(f"[gate] coverage: {coverage_label(c, v)}")
+    if cs["signature"]:
+        print(f"[gate] coverage signature: {cs['signature']}"
+              + ("  (waiver valid)" if waiver_ok else ""))
+    for n in notes:
+        print(f"[gate] NOTE {n}")
+    for e in errors:
+        print(f"[gate] ERROR {e}")
+    print(f"\n[gate] VERDICT: {verdict}")
+    if converged:
+        print(f"[gate] CONVERGED — {verdict}" + (" with a valid coverage waiver"
+                                                 if verdict == "PASS-PARTIAL" else "")
+              + f"; the last {need} swept rounds introduced no new blocking finding. "
+                f"The book can reach `complete`.")
+    else:
+        print(f"[gate] NOT converged — {reason}.")
+        if round_no >= int(cfg["max_rounds"]) and verdict != "ERROR":
+            print("[gate] MAX ROUNDS REACHED. Do NOT relax the criterion: produce the "
+                  "escalation packet (references/loopback-handoff.md) and set "
+                  "`phase: blocked-on-manuscript-gate`.")
+    print(f"[gate] report → {project.rel(report)}")
     if todo:
         print("\n[gate] dispatch these, then re-run with --verdict-only:")
         for t in todo:
             print(f"  - {t}")
-
-    prior.append({
-        "round": args.round, "verdict": st.verdict,
-        "open_critical": st.open_critical, "open_major": st.open_major,
-        "open_minor": st.open_minor, "positives": st.positives,
-        "new_blocking": st.new_blocking,
-        "rounds_without_new": st.rounds_without_new,
-        "converged": converged(st, cfg),
-        # Kept per round so the report can show coverage GROWING, which is the
-        # only evidence that the pool is draining rather than the same slice
-        # being re-read.
-        "coverage": {c: {k: v[k] for k in ("covered", "eligible", "sampled") if k in v}
-                     for c, v in st.coverage.items() if v.get("counts")},
-        "breadth_signature": st.breadth_signature,
-        "depth_signature": st.depth_signature,
-        "finding_keys": [_key(f) for f in findings],
-    })
-    save_state(run_dir, prior)
-    return 0
+    return 2 if errors else (0 if converged else 1)
 
 
-def _existing_run_stamp(project: Project) -> str | None:
-    if not project.reviews.exists():
-        return None
-    runs = sorted(p.name for p in project.reviews.glob("manuscript-gate-*") if p.is_dir())
-    return runs[-1].replace("manuscript-gate-", "") if runs else None
+def live_story_check(project: Project, run_dir: Path, errors: list[str]) -> str:
+    """Converged implies `check_story.py --manuscript` exits 0 NOW (the bible can
+    change after a sweep). '' when it passes; the reason when it does not."""
+    if not (HERE / "check_story.py").exists():
+        errors.append("MG-S: scripts/check_story.py is not installed")
+        return ""
+    out = run_dir / "story-live.json"
+    out.unlink(missing_ok=True)
+    code, log = run_tool("check_story.py", ["--root", str(project.root), "--manuscript",
+                                            "--json", str(out)])
+    data = read_json(out)
+    if code not in (0, 1) or data is None:
+        errors.append(f"MG-S: check_story.py --manuscript exited {code}"
+                      + (" and wrote no valid JSON" if data is None else "") + f" — {_tail(log)}")
+        return ""
+    if code == 1:
+        bad = [f"{f.get('code')} {f.get('subject')}" for f in data.get("findings") or []
+               if f.get("severity") in ("blocking", "major")]
+        return ("`check_story.py --manuscript` exits 1 now (R1–R4: "
+                + ", ".join(bad[:5]) + ("…" if len(bad) > 5 else "") + ")")
+    return ""
 
 
-def _count_deferred(round_dir: Path) -> int:
-    return len(collect_deferred(round_dir))
+def prepare(project: Project, round_dir: Path, run_dir: Path, unit_args: list[str],
+            cfg: dict, round_no: int, active: list[str], errors: list[str]) -> None:
+    """Technical agent inputs: MG-1 dossiers and MG-2 rule files."""
+    manifest = ["--subjects", str(run_dir / "subjects.json"), "--round", str(round_no)]
+    if "MG-1" in active:
+        probes = project.root / "bible" / "concept-probes.yaml"
+        if not probes.exists():
+            code, log = run_tool("bootstrap_probes.py", unit_args)
+            print(f"[gate] bootstrap_probes: {(log.strip().splitlines() or ['(no output)'])[0]}")
+        cov = coverage_path(round_dir, "MG-1")
+        code, log = run_tool("build_concept_dossier.py", [
+            *unit_args, "--all", "--out", str(round_dir / "dossiers"),
+            "--min-units", str(cfg["concept_min_units"]), "--top", str(cfg["top_concepts"]),
+            "--coverage", str(cov), *manifest])
+        if code != 0 or read_json(cov) is None:
+            errors.append(f"MG-1: build_concept_dossier.py exited {code} and/or wrote no "
+                          f"coverage record — {_tail(log)}")
+        for line in log.splitlines():
+            if line.startswith("[dossier]") and ("MG-1" in line or "language pack" in line):
+                print(f"[gate] {line}")
+    if "MG-2" in active:
+        cov = coverage_path(round_dir, "MG-2")
+        code, log = run_tool("extract_rule_candidates.py", [
+            *unit_args, "--out", str(round_dir / "rules"), "--top", str(cfg["top_rules"]),
+            "--coverage", str(cov), "--propose-probes",
+            str(round_dir / "rule-probes-proposed.yaml"), *manifest])
+        if code != 0 or read_json(cov) is None:
+            errors.append(f"MG-2: extract_rule_candidates.py exited {code} and/or wrote no "
+                          f"coverage record — {_tail(log)}")
+        for line in log.splitlines():
+            if line.startswith("[rules]") and ("MG-2" in line or "language pack" in line
+                                               or "SAMPLED" in line):
+                print(f"[gate] {line}")
 
 
-# Things reality can answer. `human-decision` is deliberately absent: no
-# observation settles a choice, so it goes to the human packet, not the plan.
-CHECKABLE_NEEDS = {"runner", "live-system", "measurement", "person",
-                   "document-of-record"}
-
-
-def collect_deferred(round_dir: Path) -> list[dict]:
-    out: list[dict] = []
-    fdir = round_dir / "findings"
-    if not fdir.exists():
-        return out
-    for path in sorted(fdir.glob("*.json")):
-        try:
-            doc = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        for d in (doc.get("deferred") or []):
-            d["_check"] = doc.get("check")
-            d["_subject"] = doc.get("subject")
-            out.append(d)
+def dispatch_list(project: Project, round_dir: Path, cov: dict, cfg: dict) -> list[str]:
+    """What is still pending AND has an input this round (emitted, or whole-book)."""
+    rel = project.rel(round_dir)
+    passes = int(cfg["passes_per_subject"])
+    pend = {c: [i for i, e in v["entries"].items() if e["state"] == "pending" and i != "blocked"]
+            for c, v in cov.items()}
+    for c in ("MG-1", "MG-2"):
+        emitted = set((read_json(coverage_path(round_dir, c)) or {}).get("emitted") or [])
+        pend[c] = [i for i in pend.get(c, []) if i in emitted]
+    out: list[str] = []
+    if pend.get("MG-1"):
+        out.append(f"MG-1: concept-auditor over {len(pend['MG-1'])} dossier(s) in {rel}/dossiers/ "
+                   f"(lenses pairs, numbers-and-absolutes, source), {passes} passes each → "
+                   f"findings/<concept>.<lens>.p<N>.json")
+    if pend.get("MG-2"):
+        out.append(f"MG-2: rule-auditor over {len(pend['MG-2'])} rule file(s) in {rel}/rules/, "
+                   f"{passes} passes each → findings/<rule-id>.rule-vs-instance.p<N>.json")
+    if pend.get("MG-3"):
+        out.append(f"MG-3: rule-auditor, exercise-coverage mode, over {', '.join(pend['MG-3'])} "
+                   f"→ findings/<unit>.exercise-coverage.p1.json")
+    if pend.get("MG-4"):
+        if project.literary:
+            out.append("MG-4: reader-pov literary whole-book mode over manuscript.md, TWO "
+                       "independent reads (fresh subagents) → findings/manuscript."
+                       "whole-book-read.p1.json and .p2.json")
+        else:
+            out.append("MG-4: reader-pov whole-book mode over manuscript.md → "
+                       "findings/manuscript.whole-book-read.p1.json")
+    for lens in pend.get("MG-C", []):
+        out.append(f"MG-C: {lens} audit (references/manuscript-gate-literary.md), two "
+                   f"independent passes → findings/manuscript.{lens}.p1.json and .p2.json")
+    if out:
+        out.append("Every dispatched subject writes a findings file, INCLUDING clean ones: "
+                   "a subject with no file was not audited. Auditors read GROUNDING.md first.")
     return out
 
 
-def emit_verification_plan(deferred: list[dict], out_path: Path) -> int:
-    """Turn unsettled questions into a plan somebody can execute.
-
-    A `deferred` list is an honest answer to "could you verify this?" and a dead
-    end if it stops there. Every item whose `needs` names something reality can
-    answer becomes a numbered entry with an empty result slot.
-
-    The pipeline can settle a lot; what it cannot settle is not automatically
-    unknowable — usually it is just unknown HERE. Writing the check down is what
-    keeps a claim nobody verified from shipping as though somebody had.
-    """
-    checkable = [d for d in deferred if d.get("needs") in CHECKABLE_NEEDS]
-    if not checkable:
-        return 0
-
-    by_need: dict[str, list[dict]] = {}
-    for d in checkable:
-        by_need.setdefault(d["needs"], []).append(d)
-
-    L = ["# Verification plan — generated skeleton", "",
-         "Generated by `scripts/manuscript_gate.py` from the round's `deferred` "
-         "items. **This is a skeleton, not a plan.** Before anyone can run it you "
-         "still owe the shared setup, the paste-ready form of each check, and the "
-         "ordering — see `references/verification-plan.md` and "
-         "`templates/verification-plan.md`.", "",
-         f"**{len(checkable)} check(s)** the pipeline could not settle and reality "
-         f"can. {len(deferred) - len(checkable)} further item(s) need a human "
-         f"decision rather than an observation; those go to the human packet.", "",
-         "Fill `**Actual result:**` in this file, with literal values. Skipping "
-         "one? Write `NOT RUN` and why — an empty slot is ambiguous.", "",
-         "---", ""]
-
-    n = 0
-    for need in sorted(by_need):
-        L += [f"## Needs: {need}", ""]
-        for d in by_need[need]:
-            n += 1
-            L += [f"### V-{n:02d} — {d.get('question', '(no question stated)')}", ""]
-            if d.get("sites"):
-                L.append(f"- **Claim:** {', '.join(d['sites'])}")
-            L.append(f"- **From:** {d.get('_check', '?')} · {d.get('_subject', '?')}")
-            how = d.get("how_to_check") or (
-                "**TODO** — an entry nobody can execute is an entry nobody runs")
-            expected = d.get("expected") or "**TODO**"
-            defect_if = d.get("defect_if") or (
-                "**TODO** — write this BEFORE checking, or the result gets read "
-                "as confirmation")
-            L.append(f"- **Why unresolved:** {d.get('why_unresolved', '—')}")
-            L.append(f"- **How to check:** {how}")
-            L.append(f"- **What the book expects:** {expected}")
-            L.append(f"- **Suspect a defect if:** {defect_if}")
-            L += ["", "**Actual result:**", "", "", "---", ""]
-
-    L += ["## What was left out, and why", "",
-          "| Area | Why unchecked | What would change that |", "|---|---|---|", "",
-          "## Results roll-up", "",
-          "| Check | Result | Verdict | Where it goes |", "|---|---|---|---|", "",
-          "Confirmed defect → a finding in the current round, check id as "
-          "`authority`. Confirmed correct → `verified_against` in "
-          "`bible/claim-index.yaml` (this half matters as much: a verified-correct "
-          "result that is not persisted gets re-litigated next pass). Still "
-          "surprising → back to `deferred`."]
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
-    return len(checkable)
-
-
-def coverage_header(st: GateState) -> str:
-    """The one line that has to be true before anything else in the report is read."""
-    parts = [v["label"] for v in st.coverage.values() if v.get("label")]
-    return " · ".join(parts) if parts else "not measured"
-
-
-def emit_coverage_summary(st: GateState, cfg: dict, det: dict, runners: dict,
-                          docs: list[dict], out_path: Path) -> None:
-    """Write the report's header and `What ran` table, COMPUTED.
-
-    v3.1 left the Sampling line as prose for an agent to fill, which makes the
-    honest number depend on the agent remembering — the exact mechanism the
-    waiver section exists to eliminate. So the report does not ask anyone to
-    write these; it asks them to paste this file.
-    """
-    found = {}
-    deferred = {}
-    for d in docs:
-        c = d.get("check")
-        found[c] = found.get(c, 0) + len(d.get("findings") or [])
-        deferred[c] = deferred.get(c, 0) + len(d.get("deferred") or [])
-
-    lint = (det.get("lint_render") or {}).get("counts") or {}
-    rows = []
-    for check, title in (("MG-1", "concept audit"), ("MG-2", "rule vs instances"),
-                         ("MG-3", "exercise vs content"), ("MG-4", "whole-book read")):
-        v = st.coverage.get(check, {})
-        rows.append((f"{check} {title}", v.get("label", "—"),
-                     found.get(check, 0), deferred.get(check, 0),
-                     "complete" if v.get("complete") else v.get("state", "—")))
-    rows.append(("MG-5 render lint", "all units, always complete",
-                 sum(int(x) for x in lint.values()), "—", "complete"))
-    n_surf = len(runners.get("surfaces") or [])
-    n_block = sum(1 for r in (runners.get("surfaces") or []) if r.get("blocking"))
-    rows.append(("MG-6 executable code", f"{n_surf} surface(s), always complete",
-                 n_block, "—", "complete"))
-    fd = det.get("fixed_defects") or {}
-    rows.append(("MG-7 fixed-defect regression",
-                 f"{fd.get('entries', 0)} entry(ies), whole book, always complete",
-                 sum(int(x) for x in (fd.get("counts") or {}).values()), "—",
-                 "complete"))
-
-    L = [f"<!-- generated by scripts/manuscript_gate.py — round {st.round}. "
-         f"Paste into REPORT.md; do not hand-write these numbers. -->", "",
-         f"**Verdict:** {st.verdict}",
-         f"**Coverage:** {coverage_header(st)}",
-         f"**Breadth signature:** `{st.breadth_signature}`"
-         + ("  ✓ waived" if st.coverage_waived else ""),
-         f"**Depth signature:** `{st.depth_signature}`"
-         + ("  ✓ waived" if st.depth_waived else ""),
-         f"**Convergence:** {st.rounds_without_new} consecutive round(s) with no new "
-         f"critical/major (need {cfg['rounds_without_new_to_close']})", "",
-         "## What ran", "",
-         "| Check | Scope this round | Findings | Deferred | Status |",
-         "|---|---|---:|---:|---|"]
-    L += [f"| {a} | {b} | {c} | {d} | {e} |" for a, b, c, d, e in rows]
-
-    sampled = {c: v for c, v in sorted(st.coverage.items())
-               if v.get("counts") and v.get("sampled")}
-    if not sampled:
-        L += ["", "**Depth:** every audited subject was read in full.", ""]
-    else:
-        L += ["", "## Depth — subjects read only in part", "",
-              "These were opened, so they count toward breadth. They were judged from "
-              "a SAMPLE of themselves, so they may not be reported clean. Each line "
-              "names the way out; if a subject genuinely is that wide, waiving is the "
-              "honest answer rather than a smaller number.", "",
-              "| Check | Sampled | Of covered | How to close it |",
-              "|---|---:|---:|---|"]
-        L += [f"| {c} | {v['sampled']} | {v['covered']} | {LADDER.get(c, '')} |"
-              for c, v in sampled.items()]
+def report_block(project, round_no, cfg, verdict, converged, reason, store, cov, cs,
+                 waiver_ok, state, swept, nb, positives, todo, errors, notes) -> list[str]:
+    open_ = sorted((r for r in store.values() if r.get("status") == "open"),
+                   key=lambda r: (SEV_RANK.get(r.get("severity"), 9), r["check"], r["key"]))
+    never = sum(1 for v in cov.values() for e in v["entries"].values()
+                if e["state"] == "pending" and e.get("reason") in ("never-audited", "blocked"))
+    partly = sum(1 for v in cov.values() for e in v["entries"].values()
+                 if e["state"].startswith("sampled@")
+                 or (e["state"] == "pending" and str(e.get("reason", "")).startswith("passes")))
+    edited = sum(1 for v in cov.values() for e in v["entries"].values()
+                 if e.get("reason") == "edited-since-audit")
+    L = [f"{BEGIN} — round {round_no}. Regenerated on every run; write outside this block. -->",
+         "", f"**Verdict:** {verdict} · **Round:** {round_no}/{cfg['max_rounds']} · "
+             f"**Converged:** {'yes' if converged else 'no — ' + reason}",
+         f"**Open findings:** "
+         + " · ".join(f"{sum(1 for r in open_ if r.get('severity') == s)} {s}"
+                      for s in ("critical", "major", "minor"))
+         + " (`findings.jsonl`)",
+         f"**Coverage:** never opened {never} · partly read {partly} · re-queued (edited) {edited}"
+         + (f" · signature `{cs['signature']}`" + (" — waiver valid" if waiver_ok else "")
+            if cs["signature"] else " · complete"), "", "## What ran", "",
+         "| Check | Scope | Open (crit/major/minor) | Status |", "|---|---|---|---|"]
+    for c in applicable_checks(project):
+        o = [r for r in open_ if r["check"] == c]
+        counts = "/".join(str(sum(1 for r in o if r.get("severity") == s))
+                          for s in ("critical", "major", "minor"))
+        if c in cov:
+            scope, status = coverage_label(c, cov[c]), "measured"
+        elif c in ("MG-5", "MG-7", "MG-S", "MG-T", "MG-6"):
+            scope, status = "whole book, every round", "complete"
+        else:
+            scope, status = "switched off", "waived"
+        L.append(f"| {c} | {scope} | {counts} | {status} |")
+    if project.literary:
+        L.append("| MG-1/2/3/6 | n/a (profile) | — | n/a |")
+    L += ["", f"Verified correct (N1/N2/D7a): "
+              + (", ".join(f"{c} {n}" for c, n in sorted(positives.items())) or "none"), ""]
+    pend = [(c, i, e) for c, v in cov.items() for i, e in sorted(v["entries"].items())
+            if e["state"] == "pending" or e["state"].startswith("sampled@")]
+    if pend:
+        L += ["## Not fully audited", "", "| Check | Subject | State | Why |", "|---|---|---|---|"]
+        L += [f"| {c} | `{i}` | {e['state'].split('@')[0]} | {e.get('reason') or e.get('detail') or ''} |"
+              for c, i, e in pend[:60]]
+        if len(pend) > 60:
+            L.append(f"| … | {len(pend) - 60} more in `subjects.json` | | |")
         L.append("")
-        for c, v in sampled.items():
-            ids = v.get("sampled_ids") or []
-            if ids:
-                L += [f"`{c}` sampled subjects: "
-                      + ", ".join(f"`{i}`" for i in ids[:25])
-                      + (f" … (+{len(ids) - 25})" if len(ids) > 25 else ""), ""]
-
-    # §The economy, stated as a decision rather than as a setting. "30 of 474"
-    # reads like configuration; "444 candidate rules will not be looked at — 94%
-    # of the surface" reads like something a person chose.
-    for check, v in sorted(st.coverage.items()):
-        cut = v.get("cut") or []
-        if not cut:
-            continue
-        eligible = max(v.get("eligible", 0), 1)
-        L += [f"## {check} — what will NOT be looked at", "",
-              f"**{len(cut)} candidate(s) below the cut — {len(cut) / eligible:.0%} of "
-              f"the eligible surface.** They are ranked: promoting three specific ones "
-              f"into the next round needs no recalibration, just a higher quota or a "
-              f"hand-run.", "",
-              "| Rank | Id | Stratum | Instances | Site |", "|---:|---|---|---:|---|"]
-        for c in cut[:20]:
-            L.append(f"| {c.get('rank')} | `{c.get('id')}` | {c.get('stratum')} | "
-                     f"{c.get('instances')} | `{c.get('site', '')}` |")
-        if len(cut) > 20:
-            L.append(f"| … | _{len(cut) - 20} more in "
-                     f"`coverage-{check}.json`_ | | | |")
+    if open_:
+        L += ["## Open findings", "", "| Key | Check | Relation | Severity | Location | Note |",
+              "|---|---|---|---|---|---|"]
+        L += [f"| `{r['key']}` | {r['check']} | {r.get('relation')} | {r.get('severity')} | "
+              f"`{r.get('location', '')}` | {(r.get('auto_note') or r.get('detail') or '')[:90]} |"
+              for r in open_[:80]]
         L.append("")
+    if todo:
+        L += ["## Dispatch this round", ""] + [f"- {t}" for t in todo] + [""]
+    if errors or notes:
+        L += ["## Errors and notes", ""] + [f"- **ERROR** {e}" for e in errors] + \
+             [f"- {n}" for n in notes] + [""]
+    L += ["## Round history", "", "| Round | New blocking | Open crit/major | Verdict |",
+          "|---:|---:|---|---|"]
+    for r in swept:
+        v = state["rounds"].get(str(r)) or {}
+        o = v.get("open") or {}
+        L.append(f"| {r} | {nb.get(r, 0)} | {o.get('critical', '—')}/{o.get('major', '—')} | "
+                 f"{v.get('verdict', '—')} |")
+    L.append("")
+    return L
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
-
-def _print_deterministic(det: dict, runners: dict) -> None:
-    lint = (det.get("lint_render") or {}).get("counts") or {}
-    print(f"[gate] MG-5 render lint: {lint.get('critical', 0)} critical · "
-          f"{lint.get('major', 0)} major · {lint.get('minor', 0)} minor")
-    ci = (det.get("claim_index") or {})
-    counts = ci.get("counts") or {}
-    print(f"[gate] claim index: " + ("  ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-                                     or "not built yet")
-          + f" · PROPAGATE={len(ci.get('propagate') or [])}")
-    rows = runners.get("surfaces") or []
-    blocking = sum(1 for r in rows if r.get("blocking"))
-    print(f"[gate] MG-6 runners: {len(rows)} surface(s), {blocking} blocking")
-    fd = det.get("fixed_defects") or {}
-    fdc = fd.get("counts") or {}
-    print(f"[gate] MG-7 fixed defects: {fd.get('entries', 0)} entry(ies) pinned · "
-          f"{fdc.get('critical', 0)} critical · {fdc.get('major', 0)} major "
-          f"reappearance(s)")
-    anc = (det.get("anchors") or {}).get("counts") or {}
+def _print_sweep(out: dict, recs: list[dict]) -> None:
+    by = {}
+    for r in recs:
+        by.setdefault(r["check"], {}).setdefault(r["severity"], 0)
+        by[r["check"]][r["severity"]] += 1
+    for c in ("MG-5", "MG-7", "MG-S", "MG-T"):
+        if c in (out.get("tools") or {}):
+            s = by.get(c, {})
+            print(f"[gate] {c}: {s.get('critical', 0)} critical · {s.get('major', 0)} major · "
+                  f"{s.get('minor', 0)} minor"
+                  + ("" if out["tools"][c] is not None else "  (TOOL FAILED)"))
+    ci = out.get("claim_index")
+    if ci is not None:
+        counts = ci.get("counts") or {}
+        print("[gate] claim index: " + ("not built yet" if ci.get("absent") else
+                                        "  ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+              + f" · PROPAGATE={len(ci.get('propagate') or [])}")
+    anc = (out.get("anchors") or {}).get("counts") or {}
     if anc:
         print("[gate] anchors: " + "  ".join(f"{k}={v}" for k, v in sorted(anc.items()))
-              + ("  — run `resolve_anchors.py --heal` to repair DRIFT"
-                 if anc.get("DRIFT") else ""))
+              + ("  — run `resolve_anchors.py --heal` to repair DRIFT" if anc.get("DRIFT") else ""))
 
 
 if __name__ == "__main__":

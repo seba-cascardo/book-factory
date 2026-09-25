@@ -1,91 +1,38 @@
-# bible/fixed-defects.yaml — defects that were fixed and must not come back
+# bible/fixed-defects.yaml — defects that were fixed and must not come back (MG-7)
 #
-# WHAT THIS IS
+# The negative counterpart of bible/do-not-touch.md: that file protects text that
+# is CORRECT, this one forbids formulations that were WRONG.
+# `scripts/check_fixed_defects.py` scans the whole book in every gate sweep; a
+# reappearance defaults to `critical`. Why: docs/rationale/gate.md#mg7.
 #
-# The negative counterpart of `bible/do-not-touch.md`. That file protects text
-# that is CORRECT; this one forbids formulations that were WRONG. `selftest.py`
-# tests the scripts. Until this file existed, nothing in the toolkit could assert
-# "this defective wording must not return".
+# PIN THE CLAIM, NOT THE CODE. The text that corrects a defect usually quotes the
+# defective form to teach against it, so a literal pin on the expression fires on
+# the fix itself, every round. Pin the conceptual frame, which only reappears if
+# somebody reintroduced the wrong model. `allow_in` is the escape hatch for claim
+# and counter-example that genuinely share wording, not a substitute for pinning well.
 #
-# WHY IT EXISTS
-#
-# Closing one defect on the reference book — a chapter that collapsed the three
-# positions of a set modifier into two slots, which took FOUR independent passes
-# to detect — required inverting a gate assertion by hand and adding content pins
-# to a linter, because nothing otherwise stopped the wrong mental model from
-# reappearing in a later edit. A defect that expensive to find should not be able
-# to walk back in silently.
-#
-# HOW IT RUNS
-#
-# `scripts/check_fixed_defects.py`, as MG-7 in the gate's deterministic sweep.
-# Always the whole book, always complete, costs seconds. A reappearance defaults
-# to `critical`.
-#
-# ─────────────────────────────────────────────────────────────────────────
-# THE RULE THAT MATTERS: PIN THE CLAIM, NOT THE CODE
-# ─────────────────────────────────────────────────────────────────────────
-#
-# The text that corrects a defect usually quotes the defective form in order to
-# teach against it. The reference fix reads, verbatim:
-#
-#   "And the position in between, `Avg({<Region={'EMEA'}>} Aggr(...))`, with the
-#    set inside the outer aggregation's own parens — only the outer sees it…
-#    That is the one that looks like the fix and is not."
-#
-# A literal pin on that expression fires on the fix itself, every round, forever.
-# The right pin is the conceptual frame — `two slots`, `the outer aggregation's
-# reach` — which can only appear if somebody reintroduced the wrong model.
-#
-# Whoever writes the first entry will reach for the code. Do not.
-# `allow_in` is the escape hatch for the cases where the claim and the
-# counter-example genuinely share wording, not a substitute for pinning well.
-#
-# ─────────────────────────────────────────────────────────────────────────
-# LIFECYCLE
-# ─────────────────────────────────────────────────────────────────────────
-#
-#   - An entry is BORN when a `critical` or `major` finding is marked resolved.
-#   - The gate PROPOSES it in the human packet; the human writes and accepts it.
-#     It is not auto-generated: getting the `forbid` pattern right is the
-#     judgement above, and a machine that guesses it produces a check that cries
-#     wolf on the fix.
-#   - An entry NEVER EXPIRES. If the book changes version and the rule stopped
-#     applying, delete it explicitly with a reason, the same way a waiver is
-#     retired. Silence is not retirement.
+# LIFECYCLE. Born when a critical/major finding is resolved: the gate's report
+# proposes the entry, the human writes and accepts it. Never expires: retire an
+# entry explicitly, with a reason, like a waiver.
 
 defects:
   - id: FIX-01
     what: >
-      the chapter collapsed the three positions of the set modifier in Aggr()
-      into two slots, so the middle position — set inside the outer
-      aggregation's own parens — was described as equivalent to the outer one
-    severity_if_back: critical    # a regression of a CONFIRMED defect
+      the chapter collapsed the three positions of the set modifier in Aggr() into
+      two slots, so the middle position was described as equivalent to the outer one
+    severity_if_back: critical    # critical | major | minor
     fixed_on: 2026-08-01
-    detected_by: [concept-audit, polish-pass, rule-auditor, reader-pov]  # 4 passes
-
-    forbid:
-      # The conceptual frame, not the expression. Either of these can only be
-      # written by someone holding the wrong model again.
+    detected_by: [concept-audit, polish-pass, rule-auditor, reader-pov]
+    forbid:                       # kind: regex (default) | literal; case_sensitive: false
       - kind: regex
         pattern: '\btwo[- ]slots?\b'
       - kind: regex
         pattern: "outer aggregation's reach"
-
-    scope: [ch-11, ch-18]         # unit stems; omit or leave empty for the whole
-                                  # book. A defect fixed in two chapters can
-                                  # reappear in a third, so prefer whole-book
-                                  # unless the wording is legitimate elsewhere.
-
+    scope: [ch-11, ch-18]         # unit stems or paths; empty = the whole book (prefer it:
+                                  # a defect fixed in two chapters can return in a third)
     allow_in:
-      # CRITICAL. Without this, the pin fires on the corrected text itself.
       - anchor: "That is the one that looks like the fix and is not"
-        why: >
-          the corrected passage quotes the wrong form in order to teach against
-          it. The anchor is matched against the offending paragraph and its two
-          neighbours, so the counter-example and its label do not have to sit in
-          the same block.
+        why: the corrected passage quotes the wrong form to teach against it; the
+          anchor is matched against the hit's paragraph and its two neighbours
 
-# Delete the example above when the first real entry lands. Keep the header
-# comment: the "pin the claim, not the code" rule is the whole reason this file
-# does not degrade into noise.
+# Delete the example when the first real entry lands; keep the header.

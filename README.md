@@ -18,54 +18,50 @@ One pipeline, five **document profiles** — each with its own register, structu
 
 ## What makes it different
 
-- **Source-grounded.** Nonfiction writers read a curated source library before drafting and cite their claims. A dedicated Technical Reviewer verifies claims, code, versions, framings, and — for papers — reference integrity.
-- **One voice per *project*, not one voice per skill.** Every project defines its own voice profile — a distinctive fingerprint, an opening rotation, and its own calibration examples generated at setup. The skill's reference files carry rules and counter-examples only, never imitable "good" prose. This is deliberate: shared examples make every document sound the same.
-- **Countable quality gates.** The Critic's verdict is *computed* from a scorecard, not asserted. A rhetoric budget caps rhetorical questions, "not X but Y" reframes, dramatic-danger lexicon, and template headings — counted mechanically, not judged by feel.
-- **Roles don't overlap.** Each agent owns a clean slice and flags issues outside its scope instead of fixing them silently. The Editor is structural; the Humanizer owns prose; the Critic only gates.
-- **Adversarial verification, on by default.** After a passing gate, independent skeptics — blind to the verdict — try to refute the unit. Findings confirmed by a majority reopen it. Review agents inflate; verification is cheaper than a fix pass acting on a wrong finding.
-- **A gate for the book, not just for the chapter.** Per-unit review is structurally blind to a contradiction that spans two units. Phase 4.5 re-audits the whole document — concept by concept, rule against the book's own code, exercise against what was actually taught — and loops until it converges.
-- **It knows what else says the same thing.** A fingerprint-keyed claim index means editing one passage tells you which other passages just went stale. Incomplete fixes are the defect class this exists to kill.
-- **Deterministic checks are code, not prompts.** Rendering hazards, terminology pins, propagation — a regex doesn't hallucinate a violation and isn't tired by chapter 14. The agents keep the judgement.
-- **Nothing turns off silently.** Any disabled check records who waived it, why, and what is owed. `complete` has preconditions the skill actually verifies.
-- **The verdict knows what it did not look at.** Coverage is a computed term, not a note somebody remembers to write: a gate that audited 30 of 474 candidates returns `PASS-PARTIAL`, names the number, and lists the ranked remainder. Breadth and depth are separate terms with separate ways out — later rounds audit the *next* slice on their own, and a subject too wide to judge in one run can be narrowed by hand. `PASS` is reachable by work, never by assumption.
+- **Source-grounded.** Nonfiction writers read a curated source library before drafting and cite their claims. A Technical Reviewer verifies claims, code, versions and framings; every function or command the text names is checked against an identifier index built from the sources, so an invented API cannot pass on a reviewer's memory.
+- **One voice per *project*, not one voice per skill.** Every project defines its own voice profile and calibration passages — at least one of them written by you. The skill's reference files carry rules and counter-examples only, never imitable "good" prose.
+- **Counted means counted by a script.** Rhetoric budgets, AI-isms, hedges, gesture tics, role boundaries (did the Editor add prose? did the Humanizer rewrite more than its budget?) are measured by code in the project's language — Spanish and English packs ship with the skill. Agents copy the numbers; they never recount.
+- **Independent reviewers, for real.** Critic, Reader-POV, skeptics and auditors run as isolated subagents with a closed list of inputs; cold readers read the text with every pipeline comment stripped. A finding one skeptic raises survives only if a refutation pass (optionally on a second model) upholds it.
+- **Stories are designed before they are written.** In the literary profile, every character has a complete sheet — backstory, personality, want, need, voice and an arc that resolves on a named chapter — and the story has an ending before a word of chapter one is drafted. A character added mid-book goes through the same questionnaire. Scenes are planned as cards (want, opposition, pivot, value change), setups and payoffs live in a ledger, and turning points are checked against the model's own defaults.
+- **A gate for the book, not just for the chapter.** Phase 4.5 re-audits the whole document and loops until it converges. Technical books get concept, rule-vs-code and exercise audits; novels get story integrity (every arc resolved, the ending delivered, the ledger closed), cross-chapter texture (tics, names, attributes) and a continuity/developmental read.
+- **It knows what else says the same thing.** A fingerprint-keyed claim index means editing one passage tells you which other passages just went stale.
+- **Nothing turns off silently.** Any disabled check records who waived it, why, and what is owed. `complete` has preconditions the skill actually verifies — and the gate's verdict says how much of the book it looked at.
 
 ## Pipeline
 
-**Nonfiction** (`fast` default / `full` opt-in):
+**Nonfiction** (`fast` default / `full` adds Reader-POV):
 
 ```
-Writer → Technical Reviewer → Editor → Humanizer → [Reader-POV: full only]
-  → Continuity Guardian (coherence) → Critic (GATE)
-  → [Adversarial Verify: if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian (tracker) → digest → archive
+Writer → Technical Reviewer → Editor → Humanizer → [Reader-POV]
+  → Continuity Guardian (coherence) → checks → Critic (GATE)
+  → [Adversarial Verify] → Proofreader → Human review
+  → (on approval) final/ → Continuity Guardian (tracker) → digest → archive
 ```
 
-**Literary:**
+**Literary** (drafting starts only when `pipeline_step.py ready` passes):
 
 ```
-Writer → Editor → Humanizer → Reader-POV → Critic (GATE)
-  → [Adversarial Verify: if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian → digest → archive
+Writer (scene by scene) → Editor (assembly) → Humanizer → Reader-POV
+  → Continuity Guardian (continuity + facts) → checks → Critic (GATE)
+  → [Adversarial Verify] → Proofreader → Human review
+  → (on approval) final/ → Continuity Guardian (tracker) → digest
+  → reader journal → archive
 ```
+
+Every agent dispatch is bracketed by `scripts/pipeline_step.py check` / `done`, which verify inputs and outputs and write the runs log. Loops re-enter from the last gated text; a cycle that fixes nothing escalates instead of spending the retry budget.
 
 **Then, when the last unit is archived — automatically:**
 
 ```
 Phase 4.5 · MANUSCRIPT GATE  (the book is the unit, not the chapter)
-  concept audit · rule vs its own code · exercise vs content
-  whole-book read · render lint · runner-or-declared-debt
-  fixed-defect regression
+  technical: concept audit · rule vs its own code · exercise vs content
+  literary:  story integrity · texture · continuity & developmental read
+  both:      whole-book read · render lint · fixed-defect regression
     → adversarial verification of every critical/major
-    → human decides → accepted fixes emit PROPAGATE → next round
-    → next round also audits the next UNAUDITED slice, so coverage grows
-  closes on PASS + two quiet rounds — or partial coverage with the numbers on
-  record — or escalates
+    → open findings persist across rounds until resolved
+  verdict: ERROR | BLOCKED | NEEDS-REVISION | PASS-PARTIAL | PASS
+  converges on PASS (or partial coverage under a signed waiver) + two quiet rounds
 ```
-
-A per-unit reviewer cannot find a contradiction that spans two units — it sees
-one side and approves it, correctly. So the last gate changes the unit of
-analysis to the whole book, and iterates until it converges. It is not
-skippable: no path leads from the last approved unit to `complete` without it.
 
 ## Install
 
@@ -80,27 +76,30 @@ Then in Claude Code, just describe what you want to write — *"start a technica
 ## How it's organized
 
 ```
-SKILL.md                       # the map: phase detection, profiles, pipeline invariants
+SKILL.md                       # the map: phase detection, profiles, execution model
 references/
 ├── profiles/                  # the five document profiles
-├── setup.md, outlining.md, knowledge-graph.md
+├── setup.md, outlining.md, character-questionnaire.md, knowledge-graph.md
 ├── pipeline.md                # authoritative pipeline spec (Phase 3)
-├── manuscript-gate.md         # Phase 4.5 — the book-level gate and its loop
-├── claim-index.md             # propagation: what else says the same thing
-├── rubric.md                  # scorecard families + computed verdict
-├── adversarial-verify.md, verification-plan.md, build-export.md, ...
+├── rubric.md                  # scorecard schema + THE verdict computation
+├── rubric-nonfiction.md, rubric-literary.md
+├── manuscript-gate.md, manuscript-gate-literary.md   # Phase 4.5
+├── claim-index.md, adversarial-verify.md, verification-plan.md, build-export.md, ...
+├── surfaces/                  # optional validation-surface packs (e.g. Qlik)
 └── agents/                    # one contract per agent
 scripts/                       # deterministic checks — no model runs these
+├── lexicons/                  # per-language word lists (en, es)
+└── tests/                     # selftest modules + fixtures
 templates/                     # bible artifacts the scaffold copies into a project
+docs/rationale/                # why the rules are what they are (agents do not load this)
 ```
 
-A project the skill creates keeps its whole state under `bible/` (voice profile, sources, glossary, knowledge graph, claim index), `outline/`, `drafts/`, `final/`, `reviews/`, and a `project-status.yaml`.
-
-The scripts need Python 3.10+ and PyYAML; `git` is optional and powers the incomplete-fix detector. They all take `--root` and `--units`, so you can also point them at a book this skill never wrote:
+The scripts need Python 3.10+ and PyYAML; `git` is optional and powers the incomplete-fix detector. They take `--root`, so you can also point the checks at a book this skill never wrote:
 
 ```bash
 python scripts/lint_render.py --root /path/to/book --units "final/ch-*.md"
 python scripts/manuscript_gate.py --root /path/to/book --units "final/ch-*.md" --round 1
+python scripts/selftest.py        # the regression suite; no model, no tokens
 ```
 
 ## License

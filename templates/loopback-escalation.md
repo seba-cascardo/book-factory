@@ -1,23 +1,23 @@
 # Escalation — unit-[NN]: [Title]
 
-<!-- Produced by the orchestrator when retries.by_unit[unit-NN] >= retry_cap
-     AND the next verdict would not be PASS. See
-     references/loopback-handoff.md. The unit word shown to the human is the
-     profile's (chapter | article | section); the file path stays unit-NN. -->
+<!-- Produced by the orchestrator on a retry-cap hit, the plateau rule (a
+     cycle that resolved none of the previous cycle's failing rows), a Critic
+     ESCALATE, or a second contract violation (done exit 4 twice). See
+     references/loopback-handoff.md. Human-facing unit word per profile. -->
 
 **Unit**: [NN] — [Title]
 **Pipeline mode**: [fast | full | literary]
 **Cycles used**: [N] / [retry_cap]
+**Trigger**: [retry cap | plateau — failing set {…} unchanged or larger vs scorecard.c<N>.yaml | Critic ESCALATE — rows … | contract violation — agent, violations]
 **Date**: YYYY-MM-DD
 
 ---
 
 ## Timeline
 
-<!-- Every agent run and verdict, newest last. Keep it terse. Include any
-     adversarial-verify cycle — a ≥2-skeptic-confirmed finding that turned a
-     Critic PASS into a REVISE spends a retry and MUST appear here, or the
-     accounting under-reports what was tried. -->
+<!-- Every run and verdict, newest last; must reconcile with runs.tsv.
+     Include adversarial-confirmed REVISEs and human rejections — each spent a
+     retry. -->
 
 - Cycle 1: [agent] → [verdict] ([one-line reason]) → loopback to [target]
 - Cycle 2: [agent] → [verdict] ([one-line reason]) → loopback to [target]
@@ -31,8 +31,9 @@
 ### Cycle 1
 - **Agent**: [Writer | Editor | Humanizer | Reader-POV | ...]
 - **Instruction**: [what this agent was asked to fix, one sentence]
-- **Artifact**: `drafts/unit-NN/<file>.md` (at cycle 1)
+- **Artifact**: `drafts/unit-NN/humanized.c1.md` · `role-diff-<agent>-c1.json`
 - **Diff vs. previous**: +[N] / −[N] words, sections touched: [...]
+- **Failing rows after this cycle**: [ids]
 - **Why next gate failed**: [one-sentence diagnosis from the next agent's report]
 
 ### Cycle 2

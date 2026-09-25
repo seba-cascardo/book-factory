@@ -48,21 +48,25 @@ def blame_map(root: Path, relpath: str, enabled: bool = True) -> dict[int, tuple
         _cache[key] = out
         return out
 
+    # Porcelain prints a commit's header (author-time, ...) only the FIRST time the
+    # commit appears, so dates are kept per commit. A running "last date seen"
+    # gave later lines of a repeated commit the date of whichever commit was
+    # printed in between.
+    dates: dict[str, str] = {}
     sha: str | None = None
     lineno: int | None = None
-    ts = ""
     for ln in raw.splitlines():
         m = _PORCELAIN_HEAD.match(ln)
         if m:
             sha, lineno = m.group(1)[:7], int(m.group(2))
         elif ln.startswith("author-time ") and sha:
             try:
-                ts = _dt.datetime.fromtimestamp(
+                dates[sha] = _dt.datetime.fromtimestamp(
                     int(ln.split()[1]), _dt.timezone.utc).strftime("%Y-%m-%d")
             except (ValueError, OverflowError):
-                ts = ""
+                dates[sha] = ""
         elif ln.startswith("\t") and sha and lineno:
-            out[lineno] = (sha, ts)
+            out[lineno] = (sha, dates.get(sha, ""))
             sha = None
             lineno = None
 

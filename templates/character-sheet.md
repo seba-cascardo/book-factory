@@ -1,86 +1,78 @@
-# Character Sheet — [Character Name]
-
-One file per named character (`book-literary` only). Save to
-`bible/characters/[first-name].md`. Short is fine — concrete beats
-comprehensive. The Writer, Humanizer, and Critic all read these; they will
-notice when a character's dialogue drifts from their voice or their actions
-contradict their psychology.
-
-Files use `unit-NN`; say "chapter" to the human.
-
 ---
+name: ""
+slug: ""
+aliases: []
+role: secondary            # protagonist | principal | secondary
+status: draft              # draft | complete — written by `pipeline_step.py sign`, never by hand
+signed_on: null            # written by `sign`: the date the human approved (YYYY-MM-DD)
+signed_by: null            # written by `sign --by <human>`
+signed_hash: null          # written by `sign`: hash of name, slug, role, aliases, the
+                           # required fields and the arc — any later edit → CHAR-UNSIGNED-CHANGE
+added_mid_book: false
+added_in_unit: null
+backstory: ""              # REQUIRED
+personality: ""            # REQUIRED
+contradiction: ""          # REQUIRED
+want: ""                   # REQUIRED
+need: ""                   # REQUIRED
+voice: ""                  # REQUIRED
+arc:
+  type: positive           # positive | negative | flat
+  start: ""                # REQUIRED
+  end: ""                  # REQUIRED
+  tests: ""                # REQUIRED when type = flat
+  turning_points:          # REQUIRED, >= 1
+    - unit: unit-NN
+      change: ""
+  resolves_in: unit-NN     # REQUIRED, <= ending.final_unit
+relationships:
+  - with: ""               # slug
+    dynamic: ""
+---
+<!-- templates/character-sheet.md → bible/characters/<slug>.md (book-literary).
+     Filled through references/character-questionnaire.md, blocks A–H below.
+     Front matter = the short answers; scripts parse it, keep the keys. Prose =
+     the full answers. Empty means (scripts/bookkit/placeholder.py): "", null,
+     TBD, TODO, N/A, x, -, none, nil, ?, ..., …, pendiente, (pendiente), a
+     definir, por definir, sin definir, a completar, completar, <completar>,
+     {{…}}, XXX, falta, Lorem ipsum, lo vemos, or any [bracketed template text].
+     backstory, personality, contradiction, want, need, voice, arc.start,
+     arc.end and a flat arc's tests need at least 3 words. When the human
+     approves the sheet the orchestrator runs
+     `python scripts/pipeline_step.py sign <slug> --by <human>` (status,
+     signed_on, signed_by, signed_hash); an edit afterwards means re-running
+     that questionnaire block and signing again. Current state (where they are,
+     what they know now) lives in bible/continuity-tracker.md, never here.
+     Delete this comment. -->
 
-## Essentials
+# [Name]
 
-- **Full name**: [the name the narration uses, the name characters use, the
-  name on documents]
-- **Age at book start**: [N]
-- **Occupation / role**: [what they do]
-- **Where they live**: [city, neighborhood if relevant]
-- **Physical**: [3–5 concrete details — not a portrait, just enough to keep
-  consistency. Hair, height, one specific feature like a limp or a scar.]
+## A. Identity
+[Age or birth date · occupation · where they live · 3–5 physical details:
+eyes, hair, one distinguishing feature.]
 
-## Voice
+## B. Backstory
+[The past events that still act on the present; the wound and how it shows.]
 
-The Humanizer calibrates dialogue against this section; keep it specific
-enough that a line either sounds like this character or does not. Voice is the
-product in this profile — a generically "well-written" line in the wrong mouth
-is a defect, not a save.
+## C. Personality and contradiction
+[Under pressure they… · two traits, both true.]
 
-- **How they speak**: [short paragraph — vocabulary, rhythm, tic phrases,
-  register, what they never say]
-- **Formality default**: [always formal / casual / switches by context]
-- **Sample line**: "[one line that only this character would say — a
-  fingerprint, not a showcase]"
+## D. Want and need
+[Want · need · fear · the lie they tell themselves · what they won't do.]
 
-## Values and psychology
+## E. Voice
+[Vocabulary, sentence length, register shifts, verbal habits, what they never
+say; how they differ from the characters they share scenes with.]
+Sample line: "[one line only they would say]"
 
-The gap between the surface want and the underlying need is the engine of the
-arc, and the lie is what the arc tests. State the contradiction plainly here
-so the Writer can dramatize it and the Critic can check the character acted
-from it.
+## F. Arc
+[Start → end; each turning point and what forces it; flat: what their
+constancy tests.]
 
-- **What they want (surface)**: [what they say they want; what drives plot]
-- **What they want (underneath)**: [what they actually need or fear]
-- **What they won't do**: [moral or practical limit]
-- **Fear**: [what they are afraid of — the Humanizer uses this for subtext]
-- **Lie they tell themselves**: [the self-deception the arc may address]
+## G. Relationships
+- [slug]: [the dynamic, not a label]
 
-## Relationships
+## H. Never
+- [a concrete act or line they would never produce]
 
-- [Character A]: [nature of the relationship, current state]
-- [Character B]: [...]
-
-## Arc in this book
-
-- **Start state**: [how they are at unit-01]
-- **End state**: [how they are in the final unit]
-- **Turning point**: [the unit / scene where they change, if defined]
-- **Scenes / beats they own**: [outline refs where they drive the action]
-
-## Quirks and anchors
-
-- **Gesture vocabulary**: [1–3 physical behaviors the reader associates with
-  them — helps differentiate in scenes with many characters]
-- **Objects / sensory anchors**: [an item, a smell, a place — shorthand the
-  Writer can reach for]
-
-## Don't
-
-Voice and behavior drift creep in over many units. List, specifically, what
-this character would NEVER do or say, so a later unit that violates it is
-caught rather than rationalized. Be concrete — "would never apologize first"
-catches drift; "acts out of character" does not.
-
-- [specific action or line this character would never take]
-
-## Continuity notes (updated by the Continuity Guardian, Mode B)
-
-Post-approval snapshot; mirrors the character block in
-`bible/continuity-tracker.md`. The Guardian updates this after each approved
-unit and never edits the sections above — those are the human's design.
-
-- [Physical state / injuries at end of most recent unit]
-- [Knowledge state — what they know, who they know, what they believe]
-- [Relational changes across units]
-- [Location at end of most recent unit]
+Signed off by: [human] on [date].

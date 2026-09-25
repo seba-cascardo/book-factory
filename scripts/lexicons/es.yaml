@@ -1,0 +1,777 @@
+# Language pack — Spanish (es-AR, es-ES, ...). Loaded by scripts/bookkit/lexicon.py.
+# Keys are shared across packs; a key missing here means "no list for this
+# language", which the scripts report instead of printing a clean zero.
+# Projects extend a pack with bible/lexicon.yaml (lists append, scalars replace,
+# mappings merge).
+#
+# Convention: every list entry is a Python regex fragment, matched
+# case-insensitively and word-bounded. Plain words are valid fragments. Plain-word
+# lists (no regex): `stopwords`, `name_exclusions`, `non_person_names`,
+# `institution_heads`, `name_connectors`, `locative_prepositions`,
+# `indefinite_articles`, `object_markers`, `common_words`. Rioplatense (voseo) and
+# neutral/peninsular forms are both listed wherever they differ.
+language: es
+
+# ── Rule extraction (MG-2): patterns, not words. ─────────────────────────────
+# Voseo and tuteo/usted forms both appear in technical Spanish; list all three.
+modality:
+  - 'nunca'
+  - 'siempre'
+  - 'jam[aá]s'
+  - '(?:no )?(?:se )?debe(?:s|n|r[ií]a(?:s|n)?)?'
+  - 'deb[eé]s'
+  - 'hay que'
+  - 'no hay que'
+  - 'tiene(?:s|n)? que'
+  - 'ten[eé]s que'
+  - 'es obligatorio'
+  - 'es necesario'
+  - 'est[aá] prohibido'
+  - 'no se puede'
+  - 'no (?:pod[eé]s|puede(?:s|n)?)'
+  - 's[oó]lo (?:si|cuando)'
+  - '[uú]nicamente (?:si|cuando)'
+  - 'evit[aá]'
+  - 'evite(?:n)?'
+  - 'evitar'
+  - 'no us(?:[aá]s|es|e|en)'
+  - 'no funciona(?:r[aá])?'
+  - 'sin excepci[oó]n'
+universal:
+  - 'cualquier(?:a)?'
+  - 'tod[oa]s?'
+  - 'ning[uú]n(?:a|o)?'
+  - 'nada'
+  - 'cada'
+breaks:
+  - 'romp(?:e|en|er)'
+  - 'desactiva(?:n)?'
+  - 'anula(?:n)?'
+  - 'impide(?:n)?'
+  - 'invalida(?:n)?'
+  - 'fuerza(?:n)?'
+  - 'mata(?:n)?'
+  - 'ignora(?:n)? en silencio'
+  - 'falla(?:n)? en silencio'
+  - 'descarta(?:n)?'
+  - 'pierde(?:n)?'
+  - 'bloquea(?:n)?'
+  - 'degrada(?:n)?'
+  - 'vuelve(?:n)? a'
+
+# ── Plain-word lists ─────────────────────────────────────────────────────────
+# stopwords — function words plus the common sentence-openers of dialogue and
+# narration (interjections, voseo imperatives, time adverbs). Used to filter
+# n-grams (a tic needs content words) and to keep sentence-initial common words
+# out of the new-name detector ("Dale", "Mirá", "Afuera" are not characters).
+stopwords: [
+  a, al, ante, bajo, cabe, con, contra, de, del, desde, durante, en, entre, hacia,
+  hasta, mediante, para, por, según, sin, so, sobre, tras, versus, vía,
+  el, la, los, las, lo, un, una, unos, unas,
+  y, e, o, u, ni, que, pero, sino, aunque, porque, pues, si, como, cuando, donde,
+  mientras, entonces, luego, después, antes, apenas, recién, ya, todavía, aún,
+  qué, quién, quiénes, cuál, cuáles, cómo, cuándo, dónde, cuánto, cuánta, adónde,
+  yo, vos, tú, usted, ustedes, él, ella, ellos, ellas, nosotros, nosotras,
+  vosotros, me, te, se, le, les, nos, os, mí, ti, sí, conmigo, contigo, consigo,
+  mi, mis, tu, tus, su, sus, nuestro, nuestra, nuestros, nuestras, mío, mía, tuyo,
+  tuya, suyo, suya,
+  este, esta, estos, estas, ese, esa, esos, esas, aquel, aquella, aquellos,
+  aquellas, esto, eso, aquello, algo, nada, alguien, nadie, todo, toda, todos,
+  todas, cada, otro, otra, otros, otras, mismo, misma, tanto, tanta, poco, poca,
+  mucho, mucha, muchos, muchas, varios, algún, alguno, alguna, ningún, ninguno,
+  ninguna,
+  es, son, era, eran, fue, fueron, ser, sido, siendo, soy, sos, eres, somos,
+  está, están, estaba, estaban, estuvo, estar, estoy, estás, estamos,
+  ha, han, he, has, había, habían, hubo, haber, hay,
+  tiene, tienen, tenía, tenían, tengo, tenés, tienes, tuvo,
+  "no", sí, muy, más, menos, tan, también, tampoco, siempre, nunca, jamás, solo,
+  sólo, así, acá, allá, aquí, allí, ahí, ahora, hoy, ayer, mañana, afuera,
+  adentro, arriba, abajo, cerca, lejos, bien, mal, casi, quizás, quizá, capaz,
+  igual, total, además, incluso, tal, vez, recién, enseguida, pronto, tarde,
+  temprano, cuanto, cual,
+  hola, chau, adiós, gracias, perdón, bueno, dale, listo, claro, obvio, genial,
+  che, ey, eh, ah, oh, ay, uh, uf, bah, epa, mmm, ajá, okey, ok, vale, venga,
+  mirá, mira, pará, para, andá, anda, vení, ven, escuchá, escucha, escuchame,
+  decime, dime, contame, cuéntame, dejá, deja, esperá, espera, fijate, fíjate,
+  tomá, toma, vamos, sentate, siéntate, calmate, cállate, callate, basta, posta,
+  tranqui, nah, sip, nop,
+]
+
+# name_exclusions — words that are capitalized without being people. Days and
+# months (lowercase in correct Spanish, capitalized often enough), honorifics
+# that precede a name, and the few capitalized common nouns of Spanish prose.
+# Places, brands, teams and real people belong in bible/world.md instead.
+name_exclusions: [
+  lunes, martes, miércoles, jueves, viernes, sábado, domingo,
+  enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, setiembre,
+  octubre, noviembre, diciembre,
+  dios, señor, señora, señorita, virgen, don, doña, usted, ustedes, ud, uds, sr,
+  sra, srta, dr, dra, lic, ing, prof, san, santa, santo, sor, fray,
+  padre, madre, tío, tía, abuelo, abuela, nono, nona, profe, doctor, doctora,
+  capitán, general, comisario, sargento, teniente, coronel, oficial,
+  mamá, papá, navidad, pascua, nochebuena, internet, capítulo, parte, prólogo,
+  epílogo, fin,
+]
+
+# non_person_names — capitalized words that are never characters: countries,
+# big cities and regions, platforms and brands, competitions, school subjects.
+# Deliberately NOT here: words that are also common first names (Santiago,
+# Victoria, Mercedes, Soledad, Florencia, Asunción, Paz, Rosario, Negro).
+# Project-specific places, venues, clubs and public figures go in bible/world.md.
+non_person_names: [
+  argentina, uruguay, paraguay, chile, bolivia, perú, brasil, colombia, venezuela,
+  ecuador, méxico, cuba, españa, portugal, francia, italia, alemania, inglaterra,
+  irlanda, escocia, holanda, bélgica, suiza, austria, polonia, rusia, ucrania,
+  grecia, turquía, suecia, noruega, dinamarca, finlandia, china, japón, corea,
+  india, israel, egipto, marruecos, australia, canadá, estados, unidos, europa,
+  américa, áfrica, asia, oceanía, latinoamérica, sudamérica,
+  buenos, aires, córdoba, mendoza, salta, tucumán, jujuy, catamarca, chaco,
+  corrientes, misiones, neuquén, chubut, patagonia, montevideo, lima, bogotá,
+  caracas, quito, madrid, barcelona, sevilla, valencia, bilbao, málaga, parís,
+  londres, roma, milán, nápoles, berlín, ámsterdam, bruselas, lisboa, viena,
+  praga, moscú, nueva, york, miami, chicago, tokio, pekín, sídney,
+  google, whatsapp, instagram, facebook, twitter, tiktok, youtube, netflix,
+  spotify, uber, amazon, apple, iphone, android, windows, linux, python, slack,
+  zoom, excel, coca, cola, pepsi, fernet, quilmes, nike, adidas, playstation,
+  play, xbox, lufthansa, klm, iberia, aerolíneas, ryanair,
+  linkedin, paypal, chatgpt, openai, powerpoint, macbook, mcdonald, mcdonalds,
+  mercadolibre, mercadopago, pedidosya, rappi, cabify, pyme, pymes,
+  falcon, fiat, renault, peugeot, citroën, chevrolet, ford, toyota, volkswagen,
+  carrefour, coto, walmart, farmacity, garbarino, frávega, musimundo, havanna,
+  bagley, arcor, terrabusi, toddy, nesquik, nescafé, cabrales, taragüí,
+  playadito, rosamonte, marolio, serenísima, sancor, manaos, sprite, fanta,
+  brahma, stella, branca, gancia, cinzano, ypf, movistar, fibertel, clarín,
+  rapipago, zara, topper, reebok, gillette, colgate, philips, sony, samsung,
+  motorola, nokia, mercedes-benz, bmw,
+  mundial, libertadores, champions, bundesliga, olimpíadas,
+  historia, geografía, matemática, matemáticas, lengua, literatura, física,
+  química, biología, filosofía, economía, derecho, medicina, psicología,
+]
+
+# institution_heads — common nouns that head a place or institution name. A
+# capitalized word right after one ("Banco Nación", "Bar Roma", "Plaza San
+# Martín", "Cooperativa de Aguas", "calle Sarmiento") is a place, not a person.
+institution_heads: [
+  banco, plaza, calle, avenida, av, bulevar, bv, pasaje, ruta, autopista, club,
+  bar, café, confitería, restaurante, parrilla, hotel, hospital, sanatorio,
+  clínica, escuela, colegio, universidad, facultad, instituto, liceo, parque,
+  barrio, estación, terminal, aeropuerto, mercado, supermercado, shopping,
+  teatro, museo, iglesia, catedral, parroquia, capilla, cine, cooperativa,
+  ministerio, municipalidad, municipio, diario, revista, radio, canal, editorial,
+  librería, galería, puerto, río, lago, laguna, monte, cerro, isla, playa,
+  empresa, compañía, agencia, fábrica, imprenta, kiosco, almacén, edificio, torre,
+  cementerio, estadio, cancha, avenida,
+]
+# name_connectors — words that may sit inside a multiword place name
+# ("Cooperativa de Aguas", "Plaza de la Paz").
+name_connectors: [de, del, la, el, los, las]
+# locative_prepositions — a name that only ever follows these ("en Treviso",
+# "hasta Mitre") is more likely a place: reported with low confidence.
+locative_prepositions: [en, desde, hasta, hacia, rumbo]
+# indefinite_articles — "una Coca", "un Fernet": products, low confidence.
+indefinite_articles: [un, una, unos, unas]
+# object_markers — prepositions that make the next name an object, not the
+# subject of what follows ("a Gustavo lo miraron").
+object_markers: [a, al, de, del, con, para, por, sin, sobre, entre, contra, hacia, desde, hasta, en,
+  según, tras, ante, bajo]
+# determiners — a sentence-initial word right before one of these is read as a
+# verb, not a name ("Firmo un papel."); a name rarely takes a determiner next.
+determiners: [el, un, una, unos, unas, mi, mis, tu, tus, su, sus, al, del, este, esta, estos,
+  estas, ese, esa, esos, esas, aquel, aquella, aquellos, aquellas, nuestro, nuestra,
+  nuestros, nuestras, cada]
+
+# common_words — the ~2000 most frequent word forms of Spanish, folded (no
+# accents). The R4 name detector (lint_fiction / check_story) treats a
+# capitalized token that is NOT here, not known to the bible, and never written
+# in lowercase anywhere in the draft or the book as a high-confidence new name —
+# whatever its position ("Gustavo no saludó." blocks). Words that are also
+# frequent first names (rosa, clara, luz, paz, victoria, soledad, …) are left out
+# on purpose: a sentence-initial "Clara" stays a candidate.
+common_words: [
+  a, al, ante, bajo, con, contra, de, del, desde, durante, en, entre, hacia, hasta,
+  mediante, para, por, segun, sin, sobre, tras, via, el, la, los, las, lo, un, una,
+  unos, unas, y, e, o, u, ni, que, pero, sino, aunque, porque, pues, si, como, cuando,
+  donde, mientras, entonces, luego, despues, antes, apenas, recien, ya, todavia, aun,
+  tampoco, tambien, ademas, incluso, quizas, quiza, acaso, quien, quienes, cual,
+  cuales, cuanto, cuanta, cuantos, cuantas, adonde, yo, vos, tu, usted, ustedes, ella,
+  ellos, ellas, nosotros, nosotras, vosotros, me, te, se, le, les, nos, os, mi, ti,
+  conmigo, contigo, consigo, mis, tus, su, sus, nuestro, nuestra, nuestros, nuestras,
+  mio, mia, mios, mias, tuyo, tuya, suyo, suya, suyos, suyas, este, esta, estos, estas,
+  ese, esa, esos, esas, aquel, aquella, aquellos, aquellas, esto, eso, aquello, algo,
+  nada, alguien, nadie, todo, toda, todos, todas, cada, otro, otra, otros, otras,
+  mismo, misma, mismos, mismas, tanto, tanta, tantos, tantas, poco, poca, pocos, pocas,
+  mucho, mucha, muchos, muchas, varios, varias, algun, alguno, alguna, algunos,
+  algunas, ningun, ninguno, ninguna, cualquier, cualquiera, demasiado, demasiada,
+  bastante, ambos, ambas, "no", muy, mas, menos, tan, tal, vez, asi, bien, mal, mejor,
+  peor, casi, solo, solamente, siempre, nunca, jamas, aca, alla, aqui, alli, ahi,
+  ahora, hoy, ayer, anoche, anteayer, manana, tarde, temprano, pronto, enseguida,
+  afuera, adentro, arriba, abajo, atras, adelante, enfrente, encima, debajo, detras,
+  delante, cerca, lejos, alrededor, junto, finalmente, simplemente, claro, obvio,
+  igual, total, capaz, ojala, hola, chau, adios, gracias, perdon, bueno, buena, buenos,
+  buenas, dale, listo, genial, che, ey, eh, ah, oh, ay, uh, uf, bah, epa, mmm, aja,
+  okey, ok, vale, venga, basta, posta, tranqui, nah, sip, nop, cuidado, ojo, silencio,
+  mierda, carajo, puta, joder, hostia, mira, anda, veni, escucha, escuchame, decime,
+  dime, contame, dejame, dame, deja, espera, fijate, toma, vamos, vayamos, sentate,
+  calmate, callate, andate, vete, ven, oi, oye, oiga, disculpa, disculpe, uno, dos,
+  tres, cuatro, cinco, seis, siete, ocho, nueve, diez, once, doce, trece, catorce,
+  quince, veinte, treinta, cuarenta, cincuenta, sesenta, setenta, ochenta, noventa,
+  cien, ciento, doscientos, trescientos, quinientos, mil, millon, millones, primero,
+  primera, primeros, primeras, segundo, segunda, tercero, tercera, tercer, cuarto,
+  cuarta, quinto, ultimo, ultima, ultimos, ultimas, proximo, proxima, siguiente,
+  anterior, medio, media, mitad, par, doble, ser, soy, sos, eres, es, somos, son, era,
+  eras, eramos, eran, fui, fue, fuimos, fueron, sea, sean, seria, serian, sido, siendo,
+  sere, sera, seran, fuera, fueran, estar, estoy, estamos, estan, estaba, estabas,
+  estabamos, estaban, estuve, estuvo, estuvimos, estuvieron, esten, estado, estando,
+  estaria, haber, he, has, ha, hemos, han, habia, habias, habiamos, habian, hubo,
+  hubiera, hubieran, habra, habria, haya, hayan, habiendo, hay, tener, tengo, tenes,
+  tienes, tiene, tenemos, tienen, tenia, tenias, teniamos, tenian, tuve, tuvo, tuvimos,
+  tuvieron, tenga, tengan, tendra, tendria, tenido, teniendo, hacer, hago, haces, hace,
+  hacemos, hacen, haciamos, hacian, hice, hizo, hicimos, hicieron, haga, hagan, hara,
+  haria, hecho, haciendo, poder, puedo, podes, puedes, puede, podemos, pueden, podia,
+  podian, pude, pudo, pudieron, pueda, puedan, podra, podria, podrian, podido,
+  pudiendo, decir, digo, decis, dices, dice, decimos, dicen, decia, decian, dije, dijo,
+  dijimos, dijeron, diga, digan, dira, diria, dicho, diciendo, ir, voy, vas, va, van,
+  iba, ibas, ibamos, iban, vaya, vayan, ira, iria, ido, yendo, ver, veo, ves, ve,
+  vemos, veia, veian, vi, vio, vimos, vieron, vea, vean, vera, veria, visto, viendo,
+  dar, doy, das, da, damos, dan, daba, daban, di, dio, dimos, dieron, den, dara, daria,
+  dado, dando, saber, sabes, sabe, sabemos, saben, sabia, sabian, supe, supo, supieron,
+  sepa, sepan, sabra, sabria, sabido, sabiendo, querer, quiero, queres, quieres,
+  quiere, queremos, quieren, queria, querian, quise, quiso, quisieron, quiera, quieran,
+  querra, querria, querido, queriendo, llegar, llego, llega, llegan, llegaba, llegue,
+  llegamos, llegaron, llegado, llegando, pasar, paso, pasa, pasan, pasaba, pase,
+  pasamos, pasaron, pasado, pasando, deber, debo, debe, deben, debia, debian, debera,
+  deberia, debido, poner, pongo, pone, ponen, ponia, puse, puso, pusieron, ponga,
+  puesto, poniendo, parecer, parezco, parece, parecen, parecia, parecian, parecio,
+  parecido, quedar, quedo, queda, quedan, quedaba, quede, quedamos, quedaron, quedado,
+  quedando, quedarse, creer, creo, cree, creen, creia, creian, crei, creyo, creido,
+  creyendo, hablar, hablo, habla, hablan, hablaba, hable, hablamos, hablaron, hablado,
+  hablando, llevar, llevo, lleva, llevan, llevaba, lleve, llevaron, llevado, llevando,
+  dejar, dejo, dejan, dejaba, deje, dejaron, dejado, dejando, seguir, sigo, sigue,
+  siguen, seguia, segui, siguio, siguieron, siga, seguido, siguiendo, encontrar,
+  encuentro, encuentra, encuentran, encontraba, encontre, encontraron, encontrado,
+  llamar, llamo, llama, llaman, llamaba, llame, llamaron, llamado, llamando, venir,
+  vengo, venis, vienes, viene, venimos, vienen, venia, venian, vine, vino, vinieron,
+  vengan, venido, viniendo, pensar, pienso, piensa, piensan, pensaba, pense, pensaron,
+  pensado, pensando, salir, salgo, sale, salen, salia, sali, salio, salieron, salga,
+  salido, saliendo, volver, vuelvo, vuelve, vuelven, volvia, volvi, volvio, volvieron,
+  vuelva, vuelto, volviendo, tomar, tomo, toman, tomaba, tome, tomaron, tomado,
+  tomando, conocer, conozco, conoce, conocen, conocia, conoci, conocio, conocido,
+  vivir, vivo, vive, viven, vivia, vivi, vivio, vivido, viviendo, sentir, siento,
+  siente, sienten, sentia, senti, sintio, sentido, sintiendo, tratar, trato, trata,
+  tratan, trataba, trate, trataron, tratado, tratando, mirar, miro, miran, miraba,
+  mire, miraron, mirado, mirando, contar, cuento, cuenta, cuentan, contaba, conte,
+  contaron, contado, contando, empezar, empiezo, empieza, empiezan, empezaba, empece,
+  empezaron, empezado, empezando, esperar, espero, esperan, esperaba, espere,
+  esperaron, esperado, esperando, buscar, busco, busca, buscan, buscaba, busque,
+  buscaron, buscado, buscando, entrar, entro, entra, entran, entraba, entraron,
+  entrado, entrando, trabajar, trabajo, trabaja, trabajan, trabajaba, trabaje,
+  trabajado, trabajando, escribir, escribo, escribe, escriben, escribia, escribi,
+  escribio, escrito, escribiendo, perder, pierdo, pierde, pierden, perdia, perdi,
+  perdio, perdido, perdiendo, entender, entiendo, entiende, entienden, entendia,
+  entendi, entendio, entendido, entendiendo, pedir, pido, pide, piden, pedia, pedi,
+  pidio, pedido, pidiendo, recibir, recibo, recibe, reciben, recibia, recibi, recibio,
+  recibido, recordar, recuerdo, recuerda, recuerdan, recordaba, recorde, recordo,
+  recordado, recordando, terminar, termino, termina, terminan, terminaba, termine,
+  terminaron, terminado, terminando, aparecer, aparezco, aparece, aparecen, aparecia,
+  aparecio, aparecido, conseguir, consigue, consiguen, conseguia, consegui, consiguio,
+  conseguido, comenzar, comienzo, comienza, comienzan, comenzaba, comence, comenzo,
+  comenzado, servir, sirvo, sirve, sirven, servia, servi, sirvio, servido, sacar, saco,
+  saca, sacan, sacaba, saque, sacaron, sacado, sacando, necesitar, necesito, necesita,
+  necesitan, necesitaba, necesite, necesitado, leer, leo, lee, leen, leia, lei, leyo,
+  leido, leyendo, caer, caigo, cae, caen, caia, cai, cayo, cayeron, caido, cayendo,
+  cambiar, cambio, cambia, cambian, cambiaba, cambie, cambiaron, cambiado, abrir, abro,
+  abre, abren, abria, abri, abrio, abierto, abriendo, oir, oigo, oyen, oia, oyo, oido,
+  oyendo, acabar, acabo, acaba, acaban, acababa, acabe, acabado, ganar, gano, gana,
+  ganan, ganaba, gane, ganado, traer, traigo, trae, traen, traia, traje, trajo,
+  trajeron, traido, trayendo, morir, muero, muere, mueren, moria, mori, murio, muerto,
+  muriendo, explicar, explico, explica, explicaba, explique, explicado, preguntar,
+  pregunto, pregunta, preguntan, preguntaba, pregunte, preguntaron, preguntado,
+  preguntando, tocar, toco, toca, tocan, tocaba, toque, tocado, correr, corro, corre,
+  corren, corria, corri, corrio, corrido, corriendo, pagar, pago, paga, pagan, pagaba,
+  pague, pagado, ayudar, ayudo, ayuda, ayudan, ayudaba, ayude, ayudado, gustar, gusta,
+  gustan, gustaba, gusto, gustaria, jugar, juego, juega, juegan, jugaba, jugue, jugado,
+  jugando, escuchar, escucho, escuchan, escuchaba, escuche, escucharon, escuchado,
+  escuchando, levantar, levanto, levanta, levantan, levantaba, levante, levantado,
+  levantando, levantarse, intentar, intento, intenta, intentan, intentaba, intente,
+  intentado, intentando, usar, uso, usa, usan, usaba, use, usado, usando, decidir,
+  decido, decide, deciden, decidia, decidi, decidio, decidido, olvidar, olvido, olvida,
+  olvidan, olvidaba, olvide, olvidado, comer, come, comen, comia, comi, comio, comido,
+  comiendo, mostrar, muestro, muestra, muestran, mostraba, mostre, mostrado, mover,
+  muevo, mueve, mueven, movia, movi, movio, movido, moviendo, aprender, aprendo,
+  aprende, aprenden, aprendia, aprendi, aprendio, aprendido, comprar, compro, compra,
+  compran, compraba, compre, comprado, comprando, subir, subo, sube, suben, subia,
+  subi, subio, subido, subiendo, cerrar, cierro, cierra, cierran, cerraba, cerre,
+  cerrado, cerrando, echar, echo, echa, echan, echaba, eche, echado, responder,
+  respondo, responde, responden, respondia, respondi, respondio, respondido, contestar,
+  contesto, contesta, contestan, contestaba, conteste, contestado, importar, importa,
+  importan, importaba, importo, vender, vendo, vende, venden, vendia, vendi, vendio,
+  vendido, vendiendo, bajar, baja, bajan, bajaba, baje, bajado, bajando, sentar,
+  sienta, sientan, sentaba, sente, sentado, sentada, sentarse, caminar, camino, camina,
+  caminan, caminaba, camine, caminado, caminando, dormir, duermo, duerme, duermen,
+  dormia, dormi, durmio, dormido, durmiendo, despertar, despierto, despierta,
+  despiertan, despertaba, desperte, despertado, llorar, lloro, llora, lloran, lloraba,
+  llore, llorado, llorando, reir, rio, rie, rien, reia, rei, reido, riendo, reirse,
+  sonreir, sonrio, sonrie, sonrien, sonreia, sonrei, sonreido, sonriendo, gritar,
+  grito, grita, gritan, gritaba, grite, gritado, gritando, callar, callo, calla,
+  callan, callaba, calle, callado, callada, beber, bebo, bebe, beben, bebia, bebi,
+  bebio, bebido, fumar, fumo, fuma, fuman, fumaba, fume, fumado, fumando, tirar, tiro,
+  tira, tiran, tiraba, tire, tirado, tirando, guardar, guardo, guarda, guardan,
+  guardaba, guarde, guardado, apagar, apago, apaga, apagan, apagaba, apague, apagado,
+  prender, prendo, prende, prenden, prendia, prendi, prendido, encender, enciendo,
+  enciende, encendia, encendi, encendido, mandar, mando, manda, mandan, mandaba, mande,
+  mandado, pelear, peleo, pelea, pelean, peleaba, pelee, peleado, peleando, discutir,
+  discuto, discute, discuten, discutia, discuti, discutido, discutiendo, besar, beso,
+  besa, besan, besaba, bese, besado, abrazar, abrazo, abraza, abrazan, abrazaba,
+  abrace, abrazado, cruzar, cruzo, cruza, cruzan, cruzaba, cruce, cruzado, romper,
+  rompo, rompe, rompen, rompia, rompi, rompio, roto, soltar, suelto, suelta, sueltan,
+  soltaba, solte, soltado, agarrar, agarro, agarra, agarran, agarraba, agarre,
+  agarrado, cortar, corto, corta, cortan, cortaba, corte, cortado, llenar, lleno,
+  llena, llenan, llenaba, llene, llenado, vaciar, vacio, vacia, vacian, vaciaba, vacie,
+  vaciado, temblar, tiemblo, tiembla, tiemblan, temblaba, temble, respirar, respiro,
+  respira, respiran, respiraba, respire, suspirar, suspiro, suspira, suspiraba,
+  asentir, asiento, asiente, asienten, asentia, asinti, asintio, negar, niego, niega,
+  niegan, negaba, negue, nego, negado, saludar, saludo, saluda, saludan, saludaba,
+  salude, saludado, avisar, aviso, avisa, avisan, avisaba, avise, avisado, extranar,
+  extrano, extrana, extranan, extranaba, extrane, odiar, odio, odia, odian, odiaba,
+  odie, amar, amo, ama, aman, amaba, ame, amado, sonar, sueño, sueña, suenan, sonaba,
+  soñe, soñado, sueno, suena, doler, duele, duelen, dolia, dolio, dolor, pegar, pego,
+  pega, pegan, pegaba, pegue, pegado, limpiar, limpio, limpia, limpian, limpiaba,
+  limpie, limpiado, lavar, lavo, lava, lavan, lavaba, lave, lavado, cocinar, cocino,
+  cocina, cocinan, cocinaba, cocine, manejar, manejo, maneja, manejan, manejaba,
+  maneje, viajar, viajo, viaja, viajan, viajaba, viaje, viajado, cantar, canto, canta,
+  cantan, cantaba, cante, cantado, bailar, bailo, baila, bailan, bailaba, baile, nacer,
+  nazco, nace, nacen, nacia, naci, nacio, nacido, crecer, crezco, crece, crecen,
+  crecia, creci, crecio, crecido, aceptar, acepto, acepta, aceptan, aceptaba, acepte,
+  aceptado, imaginar, imagino, imagina, imaginan, imaginaba, imagine, imaginado,
+  preparar, preparo, prepara, preparan, preparaba, prepare, preparado, elegir, elijo,
+  elige, eligen, elegia, elegi, eligio, elegido, faltar, falta, faltan, faltaba, falto,
+  desear, deseo, desea, desean, deseaba, desee, entregar, entrego, entrega, entregan,
+  entregaba, entregue, entregado, admitir, admito, admite, admiten, admitia, admiti,
+  admitido, quejar, queja, quejan, quejaba, enojar, enojo, enoja, enojado, enojada,
+  cansar, cansado, cansada, asustar, asustado, asustada, preocupar, preocupa,
+  preocupado, preocupada, apurar, apuro, apura, apurado, apurada, golpear, golpeo,
+  golpea, golpeaba, golpee, empujar, empujo, empuja, empujaba, empuje, girar, giro,
+  gira, giraba, gire, doblar, doblo, dobla, doblaba, tardar, tardo, tarda, tardaba,
+  colgar, cuelgo, cuelga, colgaba, colgue, colgado, secar, seco, seca, secaba, seque,
+  secado, mojar, mojo, moja, mojado, mojada, casa, agua, noche, dia, hora, horas,
+  minuto, minutos, momento, momentos, tiempo, veces, cosa, cosas, gente, mundo, vida,
+  muerte, ano, anos, mes, meses, semana, semanas, lunes, fin, principio, lugar, parte,
+  partes, forma, caso, casos, puerta, puertas, ventana, ventanas, mesa, silla, cama,
+  pieza, bano, patio, living, comedor, pasillo, escalera, techo, piso, pared, paredes,
+  suelo, auto, coche, tren, colectivo, bondi, taxi, barco, avion, perro, perros, gato,
+  gatos, pajaro, caballo, madre, padre, padres, hijo, hija, hijos, hijas, hermano,
+  hermanos, hombre, hombres, mujer, mujeres, chico, chicos, chica, chicas, nene, nenes,
+  nena, nenas, pibe, pibes, piba, pibas, viejo, vieja, viejos, viejas, amigo, amiga,
+  amigos, amigas, novio, novia, esposa, esposo, marido, familia, tio, tia, primo,
+  prima, abuelo, abuela, vecino, vecina, vecinos, jefe, senor, senora, ojos, mano,
+  manos, cara, boca, pelo, voz, cuerpo, cabeza, corazon, sangre, piel, brazo, brazos,
+  pierna, piernas, pie, pies, dedo, dedos, espalda, hombro, hombros, papel, papeles,
+  carta, cartas, libro, libros, foto, fotos, plata, dinero, escuela, radio, tele,
+  televisor, telefono, celular, llave, llaves, bolso, cartera, ropa, zapatos,
+  zapatillas, camisa, campera, pantalon, vestido, cafe, mate, cerveza, pan, comida,
+  cena, almuerzo, desayuno, leche, azucar, sal, verdad, mentira, razon, idea, ideas,
+  preguntas, respuesta, problema, problemas, nombre, numero, numeros, palabra,
+  palabras, historia, cielo, luna, estrellas, lluvia, viento, nube, nubes, frio, calor,
+  humo, ruido, ruidos, olor, olores, miedo, hambre, sed, cansancio, suerte, culpa,
+  tierra, campo, ciudad, pueblo, barrio, esquina, vereda, ruta, plaza, estacion,
+  hospital, iglesia, oficina, negocio, bar, arbol, arboles, flores, pasto, jardin,
+  sombra, sombras, oscuridad, fuego, vidrio, hierro, madera, piedra, polvo, malo, mala,
+  grande, grandes, chiquito, chiquita, pequeno, pequena, nuevo, nueva, nuevos, largo,
+  larga, alto, alta, cierto, cierta, oscuro, oscura, raro, rara, facil, dificil,
+  posible, imposible, seguro, segura, distinto, distinta, blanco, negro, negra, rojo,
+  roja, verde, verdes, azul, gris, amarillo, tibio, caliente, fria, helado, quieto,
+  quieta, lento, lenta, rapido, rapida, feliz, triste, sola, solos, solas, juntos,
+  juntas, entero, entera, joven, jovenes, fuerte, debil, lindo, linda, feo, fea, mayor,
+  menor, unico, unica, propio, propia, despacio, suave, seguramente, embargo, final,
+  repente, pareciera, pasen, entren, miren, esperen, escuchen, salgan, tomen, dejen,
+  sigan, sientese, sientense, sientate, deci, callese, callense, tranquilo, tranquila,
+  tranquilos, calmese, calmense, disculpen, perdone, perdonen, oigan, fijese, fijense,
+  acuerdese, acordate, apurate, apurese, apurense, corran, vamonos, salgamos, bo,
+  boludo, boluda, barbaro, joya, re, chabon, mina, minas, laburo, laburar, laburando,
+  quilombo, guita, mango, birra, morfar, tipo, tipa, onda, buenisimo, buenisima,
+  tremendo, copado, macanudo, fiaca, bardo, garron, dejeme, digame, decile, deciles,
+  contale, preguntale, avisale, llamalo, llamala, mirala, miralo, agarralo, sacalo,
+]
+# initial_verb_forms — regex, full-token match, case-insensitive. A token that
+# only ever opens a sentence and matches one of these is a verb form, not a name
+# ("Rezó un Padre Nuestro.", "Llegaron tarde."). Endings shared with frequent
+# names (-ía María, -ías Matías, -ando Fernando, -elo Marcelo, -ar/-er Javier)
+# are deliberately absent: those verb forms belong in common_words instead.
+# Card-opening words shaped like nouns are events, not people ("Llamada con
+# Mariana."). Used only for the FIRST word of an outline card field; a person is
+# still caught mid-sentence and on the page. Keep surname endings out (-ez, -ón).
+noun_suffixes: [ción, sión, dad, tad, miento, aje, ismo, anza, encia, ancia, eza, ada, ura, ería]
+
+initial_verb_forms:
+  - '[^\W\d_]{2,}ó'
+  - '[^\W\d_]{2,}(?:aba|abas|aban|ábamos)'
+  - '[^\W\d_]{2,}(?:ían|íamos)'
+  - '[^\W\d_]{3,}(?:aron|ieron)'
+  - '[^\W\d_]{2,}(?:iendo|yendo)'
+  - '[^\W\d_]{2,}(?:ándo|iéndo|yéndo)(?:se|le|les|lo|la|los|las|me|te|nos)'
+  - '[^\W\d_]{2,}mente'
+  - '[^\W\d_]{2,}(?:aste|iste|asteis|isteis)'
+  - '[^\W\d_]{2,}(?:arse|erse|irse|arlo|erlo|irlo|arla|erla|irla|arle|erle|irle|arlos|arlas|arles)'
+  - '[^\W\d_]{3,}(?:ale|ame|ate|ile|ime)'
+  - '[^\W\d_]{3,}(?:rá|rán|rás|ría|rían|ríamos)'
+  - '[^\W\d_]{3,}(?:amos|emos|imos)'
+  - '[^\W\d_]{2,}[áéí](?:se|me|te|nos)(?:lo|la|los|las)'
+
+# inverted_subject_verbs — intransitive verbs whose subject may FOLLOW them
+# ("Entró Gustavo.", "esperaba Gustavo en la vereda"): the capitalized word right
+# after one is in an actor position. Transitive verbs stay out: "Dejó Rosario"
+# is a place left behind (a person object takes "a": "Dejó a Gustavo").
+inverted_subject_verbs:
+  - 'entr(?:[óo]|aba|aban|aron)'
+  - 'sal(?:i[óo]|[ií]a|[ií]an|ieron)'
+  - 'lleg(?:[óo]|aba|aban|aron)'
+  - 'volvi(?:[óo]|eron)'
+  - 'volv[ií]a(?:n)?'
+  - 'camin(?:[óo]|aba|aban|aron)'
+  - 'sonri(?:[óo]|eron)'
+  - 'sonre[ií]a(?:n)?'
+  - 'llor(?:[óo]|aba|aban|aron)'
+  - 'suspir(?:[óo]|aba|aron)'
+  - 'tembl(?:[óo]|aba|aron)'
+  - 'asinti(?:[óo]|eron)'
+  - 'esper(?:[óo]|aba|aban|aron)'
+  - 'apareci(?:[óo]|eron)'
+  - 'aparec[ií]a(?:n)?'
+  - 'habl(?:[óo]|aba|aban|aron)'
+
+# person_actions — verbs only a person does. A world.md word (a name, a place)
+# or an outline location that is the subject of one of these (or of a speech
+# verb or a gesture) is on stage: R4 promotes it to a character (check_story).
+person_actions:
+  - 'salud\w*'
+  - 'sonr[eií]\w*'
+  - 'llor\w*'
+  - 'grit\w*'
+  - 'susurr\w*'
+  - 'murmur\w*'
+  - 'suspir\w*'
+  - 'mir[óoa]\w*'
+  - 'camin\w*'
+  - 'entr[óoa]\w*'
+  - 'sal[ií]\w*'
+  - 'lleg[óoau]\w*'
+  - 'volv[ií]\w*'
+  - 'vuelve\w*'
+  - 'se (?:sent|levant|acerc|alej|fue|va|iba|encogi|ri|re)\w*'
+  - 'abraz\w*'
+  - 'bes[óoa]\w*'
+  - 'asinti\w*'
+  - 'asient\w*'
+  - 'neg[óo]\w*'
+  - 'fum\w*'
+  - 'agarr\w*'
+  - 'esper[óoa]\w*'
+  - 'golpe\w*'
+  - 'empuj\w*'
+  - 'pens[óoa]\w*'
+  - 'piens\w*'
+  - 'decidi\w*'
+  - 'tembl\w*'
+  - 'tiembl\w*'
+  - 'trajo'
+  - 'tra[ií]a\w*'
+  - 'abri[óo]\w*'
+  - 'cerr[óoa]\w*'
+  - 'dej[óoa]\w*'
+  - 'tom[óoa]\w*'
+  - 'escrib\w*'
+  - 'llam[óoa]\w*'
+  - 'contest\w*'
+  - 'respond\w*'
+
+# ── Rhetoric budget (count_rhet) ─────────────────────────────────────────────
+# ai_vocab (nonfiction) — vocabulary Spanish LLM prose reaches for in expository
+# text. Counted, never auto-replaced: a single use can be right.
+ai_vocab:
+  - 'ahond(?:ar|a|amos|emos|ando)(?: en)?'
+  - 'adentr(?:arse|arnos|émonos|a|amos)(?: en)?'
+  - 'sumerg(?:irse|irnos|ámonos|e)(?: en)?'
+  - 'panorama(?:s)? (?:actual|digital|tecnol[oó]gico)'
+  - 'en el (?:vasto |amplio )?mundo de'
+  - 'en la era (?:digital|actual|de la inteligencia artificial)'
+  - 'en el mundo actual'
+  - 'paradigma(?:s)?'
+  - 'sinergia(?:s)?'
+  - 'hol[ií]stic[oa]s?'
+  - 'robust[oa]s?'
+  - 'sin fisuras'
+  - 'de vanguardia'
+  - 'revolucion(?:ari[oa]s?|ar)'
+  - 'crucial(?:es)?'
+  - 'potenci(?:ar|a|an)'
+  - 'fomentar'
+  - 'desbloque(?:ar|a|an)'
+  - 'empoder(?:ar|a|an)'
+  - 'naveg(?:ar|ando) (?:por )?(?:la|las) complejidad(?:es)?'
+  - 'cabe (?:destacar|se[ñn]alar|mencionar|resaltar)'
+  - 'es (?:importante|fundamental|crucial) (?:destacar|se[ñn]alar|mencionar|recordar|tener en cuenta)'
+  - 'vale la pena (?:destacar|mencionar|se[ñn]alar)'
+  - 'un testimonio de'
+  - 'un recordatorio de'
+  - 'en definitiva'
+  - 'asimismo'
+
+# ai_isms (literary) — fingerprints of Spanish LLM fiction. Each hit is a
+# rewrite candidate, not a synonym swap.
+ai_isms:
+  - 'un escalofr[ií]o (?:le |me |te |nos |les )?(?:recorri[óo]|recorre|recorr[ií]a|baj[óo]|subi[óo])'
+  - '(?:solt[óoé]|suelta|dej[óoé] escapar|larg[óoué]) (?:el|un) (?:aire|aliento|suspiro) que no sab[ií]a(?:s|n)? que (?:conten[ií]a|reten[ií]a|estaba conteniendo|estaba reteniendo)'
+  - 'el aire que no sab[ií]a(?:s|n)? que (?:conten[ií]a|reten[ií]a)'
+  - 'no (?:pud[oe]|pudieron|puede|puedo|pod[ií]a|pod[ií]an) evitar'
+  - 'una (?:extra[ñn]a )?sensaci[óo]n de'
+  - 'el peso de (?:la|las|los|el|su|sus|toda la|todo el|aquella|esa|ese)? ?(?:culpa|verdad|responsabilidad|mundo|silencio|palabras?|decisi[óo]n|mirada|pasado|recuerdos?|a[ñn]os|ausencia|soledad|historia|memoria|secreto|mentira)'
+  - 'un tapiz de'
+  - '(?:reson[óo]|resonaba(?:n)?|resonaron|resuena(?:n)?|resonar|resonando)'
+  - 'palpables?'
+  - 'algo (?:en su|en mi|en tu|dentro de) (?:interior|[ée]l|ella|m[ií]|ti)'
+  - 'algo (?:cambi[óo]|se rompi[óo]|se quebr[óo]) (?:en|dentro de) (?:[ée]l|ella|m[ií])'
+  - 'de alguna manera'
+  - 'de alg[uú]n modo'
+  - 'en el fondo(?=,)'
+  - 'en el fondo,? sab[ií]a'
+  - 'una (?:danza|sinfon[ií]a|cacofon[ií]a) de'
+  - 'el aire (?:se volvi[óo]|estaba|parec[ií]a) (?:denso|espeso|pesado|cargado)'
+  - '(?:un|el) silencio (?:denso|espeso|pesado|ensordecedor)'
+  - '(?:rompi[óo]|cort[óo]|quebr[óo]|atraves[óo]) el silencio'
+  - '(?:flotaba|qued[óo] flotando|qued[óo] suspendid[oa]|colgaba) en el aire'
+  - '(?:un|el) torbellino de (?:emociones|sentimientos)'
+  - 'grabad[oa] (?:a fuego )?en (?:su|mi|tu) (?:rostro|cara|memoria)'
+  - 'se cern[ií]a(?:n)?'
+  - 'como si el (?:tiempo|mundo) se (?:hubiera|hubiese) detenido'
+  - 'el tiempo pareci[óo] detenerse'
+  - 'una mezcla de \w+ y \w+'
+  - '(?:una|la) (?:chispa|pizca|punzada|oleada|r[áa]faga) de'
+  - 'un destello de'
+  - 'cada fibra de (?:su|mi|tu) ser'
+  - 'sin saber(?:lo)? (?:que|todav[ií]a)'
+  - 'sus ojos (?:se )?(?:encontraron|cruzaron)'
+
+# weasels — hedging and intensifier adverbs (nonfiction stacked hedges,
+# literary voice-2 weasel adverbs). Reported as a count, no quota.
+weasels:
+  - 'muy'
+  - 'realmente'
+  - 'bastante'
+  - 'pr[aá]cticamente'
+  - 'b[aá]sicamente'
+  - 'esencialmente'
+  - 'simplemente'
+  - 'claramente'
+  - 'obviamente'
+  - 'evidentemente'
+  - 'ciertamente'
+  - 'definitivamente'
+  - 'totalmente'
+  - 'completamente'
+  - 'absolutamente'
+  - 'sumamente'
+  - 'incre[ií]blemente'
+  - 'literalmente'
+  - 'de repente'
+  - 'repentinamente'
+  - 'de pronto'
+  - 'quiz[aá]s?'
+  - 'tal vez'
+  - 'posiblemente'
+  - 'potencialmente'
+  - 'aparentemente'
+  - 'en cierto modo'
+  - 'de cierta forma'
+  - 'parece que'
+  - 'un tanto'
+
+# danger (rhet-3) — the dramatic-danger lexicon. Count every prose hit; the
+# quota absorbs legitimate uses.
+danger:
+  - 'silenciosamente'
+  - 'en silencio'
+  - 'silencios[oa]s?'
+  - 'sin (?:avisar|aviso|previo aviso|advertencia|quejarse|protestar|hacer ruido)'
+  - 'invisible(?:s|mente)?'
+  - 'sigilos[oa]s?'
+  - 'sigilosamente'
+  - 'a escondidas'
+  - '(?:peligro|costo|coste|trampa|falla|fallo|error)(?:s|es)? ocult[oa]s?'
+  - 'acech(?:a|an|ando|aba|aban)'
+  - 'bomba de (?:tiempo|relojer[ií]a)'
+  - 'insidios[oa]s?'
+
+# not_x_but_y (rhet-2) — reframe shapes. Applied to one paragraph of narration
+# at a time (dialogue excluded in fiction). Plain mid-sentence contrasts ("no
+# quiero agua, sino vino") are deliberately not matched.
+not_x_but_y:
+  # "No es X, es Y." / "No era X. Era Y." / "No es X, no es Y. Es Z."
+  - 'no (?:es|era|fue|ser[áa]|son|eran|fueron|est[áa]|estaba)(?: (?:solo|s[óo]lo|solamente|simplemente|[úu]nicamente|tan solo))? [^.;!?\n]{1,90}?[.,;:—–]\s*(?:es|era|fue|ser[áa]|son|eran|fueron|est[áa]|estaba)\b'
+  # "no solo X, sino (también) Y"
+  - 'no (?:s[óo]lo|solamente|[úu]nicamente|tan solo) [^.;!?\n]{1,90}?\bsino(?: que| tambi[ée]n)?'
+  # "No se trata de X, sino de Y" / "No se trata de X. Se trata de Y."
+  - 'no se trata(?:ba)? de [^.;!?\n]{1,90}?(?:[.,;:—–]\s*)(?:se trata(?:ba)? de|sino)'
+  # "No porque X, sino porque Y"
+  - 'no porque [^.;!?\n]{1,90}?\bsino porque'
+  # "menos X que Y" as a reframe: "es menos una cuestión de X que de Y"
+  - '(?:es|era|se trata|tiene que ver) menos (?:de |con |una cuesti[óo]n de )?[^.;!?\n]{1,60}? que (?:de |con )'
+  - 'tiene menos que ver con [^.;!?\n]{1,60}? que con'
+  # "Más que un X, era un Y."
+  - 'm[áa]s que (?:un|una|el|la) [^.;!?\n]{1,50}?[,;:—–]\s*(?:es|era|fue)\b'
+
+# template_headings (rhet-7) — swap-into-any-chapter section titles.
+template_headings:
+  - 'qu[ée] sigue'
+  - 'lo que viene'
+  - 'pr[óo]ximos pasos'
+  - 'conclusi[óo]n(?:es)?'
+  - 'en resumen'
+  - 'resumen'
+  - 'para cerrar'
+  - 'reflexiones finales'
+  - '(?:ideas|puntos|conceptos) clave'
+  - 'lo esencial'
+  - 'por qu[ée] (?:esto )?importa'
+  - 'atando cabos'
+  - 'recapitulando'
+  - 'a modo de cierre'
+  - 'lecciones aprendidas'
+  - 'el panorama general'
+  - 'en pocas palabras'
+
+# tease_closings (rhet-4) — forward teases in the last two paragraphs.
+tease_closings:
+  - 'ya (?:lo )?veremos'
+  - '(?:ya )?(?:vas|van) a ver'
+  - 'lo veremos (?:m[áa]s adelante|en el pr[óo]ximo cap[ií]tulo|pronto)'
+  - 'm[áa]s adelante veremos'
+  - 'en el pr[óo]ximo cap[ií]tulo'
+  - 'ah[ií] (?:es )?donde (?:la cosa|las cosas) se pone(?:n)? interesante(?:s)?'
+  - 'pero hay (?:una )?trampa'
+  - 'pero hay un problema'
+  - 'pero eso es (?:otra historia|harina de otro costal)'
+  - 'no sab[ií]a(?:n)? (?:lo que|que) (?:le|les) esperaba'
+  - 'poco sab[ií]a(?:n)?'
+  - 'lo peor (?:todav[ií]a )?estaba por venir'
+  - 'todav[ií]a no lo sab[ií]a(?:n)?'
+  - 'pero eso (?:ser[áa]|es) para otro d[ií]a'
+
+# ── Fiction (lint_fiction) ───────────────────────────────────────────────────
+# speech_verbs_plain — the invisible tags. Reported for the dialogue profile.
+speech_verbs_plain:
+  - 'dij(?:o|e|iste|imos|eron)'
+  - 'dec[ií]a(?:s|n)?'
+  - 'dice(?:s|n)?'
+  - 'digo'
+  - 'pregunt(?:[óo]|a|as|an|o|[ée]|aba|aban|aron)'
+  - 'respond(?:i[óo]|e|es|en|o|[ií]|[ií]a|ieron)'
+  - 'contest(?:[óo]|a|an|o|[ée]|aba|aron)'
+  - 'agreg(?:[óo]|a|u[ée])'
+  - 'a[ñn]ad(?:i[óo]|e|[ií])'
+  - 'repit(?:i[óo]|e|o)'
+  - 'explic(?:[óo]|a|aba|aron)'
+  - 'coment(?:[óo]|a|aba|aron)'
+  - 'aclar(?:[óo]|a|aba|aron)'
+  - 'insisti(?:[óo]|eron)'
+  - 'insist(?:e|[ií]a)'
+  - 'anunci(?:[óo]|a|aba)'
+  - 'orden(?:[óo]|a|aba)'
+  - 'advirti(?:[óo]|eron)'
+  - 'replic(?:[óo]|a|aba)'
+  - 'protest(?:[óo]|a|aba)'
+  - 'admiti(?:[óo]|eron)'
+  - 'confes(?:[óo]|aba)'
+  - 'asegur(?:[óo]|a|aba)'
+  - 'afirm(?:[óo]|a|aba)'
+  - 'suger(?:[ií]a)'
+  - 'sugiri(?:[óo]|eron)'
+  - 'habl(?:[óo]|aba|aban|aron)'
+
+# speech_verbs_ornate — tags that tell the reader how to feel. The raya is
+# Spanish dialogue, so "said/asked only" does not translate; the ornate
+# register does, and it is where Spanish LLM dialogue gives itself away.
+speech_verbs_ornate:
+  - 'espet(?:[óo]|a|an|aba|aron)'
+  - 'mascull(?:[óo]|a|an|aba|aron)'
+  - 'sise(?:[óo]|a|an|aba|aron)'
+  - 'ronrone(?:[óo]|a|an|aba|aron)'
+  - 'bram(?:[óo]|a|an|aba|aron)'
+  - 'rugi(?:[óo]|eron)'
+  - 'gru[ñn](?:[óo]|e|en|[ií]a|eron)'
+  - 'farfull(?:[óo]|a|an|aba|aron)'
+  - 'barbot(?:[óo]|a|an|aba|aron)'
+  - 'vocifer(?:[óo]|a|an|aba|aron)'
+  - 'sentenci(?:[óo]|a|aba)'
+  - 'inquiri(?:[óo]|eron)'
+  - 'musit(?:[óo]|a|aba|aron)'
+  - 'jade(?:[óo]|a|aba)'
+  - 'resopl(?:[óo]|a|aba)'
+  - 'buf(?:[óo]|a|aba)'
+  - 'escupi(?:[óo]|eron)'
+  - 'cuchiche(?:[óo]|a|aba|aron)'
+  - 'refunfu[ñn](?:[óo]|a|aba)'
+  - 'rezong(?:[óo]|a|aba)'
+  - 'increp(?:[óo]|a|aba)'
+  - 'terci(?:[óo])'
+  - 'balbuce(?:[óo]|a|aba)'
+  - 'exclam(?:[óo]|a|aba|aron)'
+
+# gestures — label: pattern. The body-tic families of Spanish LLM fiction,
+# with conjugation variants (present/past, 1st and 3rd person, pronominal
+# forms). lint_fiction counts per family, per 1000 words, and across units.
+gestures:
+  reír: '(?:se|me|nos|te) (?:r[ií]en?|r[ií]o|ri[óo]|rieron|re[ií]an?|re[ií]mos|re[ií]s|re[ií])'
+  sonreír: 'sonr[ií]en?|sonr[ií]o|sonri[óo]|sonrieron|sonre[ií]an?|sonre[ií]'
+  asentir: 'asient(?:e|en)|asinti(?:[óo]|eron)|asent[ií]an?|asent[ií]|asiento con la cabeza'
+  negar con la cabeza: '(?:niega|niegan|niego|neg[óo]|negaron|negaba|negaban|negu[ée]) con la cabeza'
+  suspirar: 'suspir(?:a|an|[óo]|aron|aba|aban|[ée])|(?:solt[óoé]|suelta|larg[óoué]|larga|dej[óo] escapar) un suspiro'
+  tragar saliva: '(?:traga|tragan|trago|trag[óo]|tragaron|tragaba|tragu[ée]) saliva'
+  encogerse de hombros: '(?:se|me|nos|te) enco(?:ge|gen|jo|gi[óo]|gieron|g[ií]a|g[ií]an|g[ií]) de hombros'
+  alzar una ceja: '(?:arque|levant|alz)(?:a|an|o|[óo]|aron|aba|aban|[ée]) (?:una|la|las) cejas?|alc[ée] (?:una|la) ceja'
+  apretar la mandíbula: '(?:apriet(?:a|an|o)|apret(?:[óo]|aron|aba|aban|[ée])) (?:la mand[ií]bula|las mand[ií]bulas|los dientes|los pu[ñn]os|los labios)'
+  morderse el labio: '(?:se|me|te) (?:muerden?|muerdo|mordi[óo]|mordieron|mord[ií]an?|mord[ií]) (?:el labio|los labios|la lengua)'
+  fruncir el ceño: '(?:frunce|fruncen|frunzo|frunci[óo]|frunciendo|fruncieron|frunc[ií]a|frunc[ií]) el ce[ñn]o'
+  mano por el pelo: '(?:se|me|te) pas(?:a|an|o|[óo]|aron|aba|[ée]) (?:la|una|las) manos? por (?:el pelo|el cabello|la cara|la nuca|la frente)'
+  ojos en blanco: '(?:pone|ponen|pongo|puso|pusieron|pon[ií]a|puse) los ojos en blanco|revole(?:a|[óo]|aba) los ojos'
+  cruzarse de brazos: '(?:se|me|te) cruz(?:a|an|o|[óo]|aron|aba|[ée]) de brazos'
+  carraspear: 'carraspe(?:a|an|o|[óo]|aron|aba|[ée])'
+  respirar hondo: 'respir(?:a|an|o|[óo]|aron|aba|[ée]) (?:hondo|profundo|profundamente)'
+  desviar la mirada: 'desv(?:[ií]an?|[ií]o|i[óo]|iaron|iaba|i[ée]) la (?:mirada|vista)|baj(?:a|[óo]|aba|[ée]) la (?:mirada|vista)'
+  cerrar los ojos: '(?:cierra|cierran|cierro|cerr[óo]|cerraron|cerraba|cerr[ée]) los ojos'
+  hacer una mueca: '(?:hace|hacen|hago|hizo|hicieron|hac[ií]a|hice) una mueca'
+  rascarse: '(?:se|me|te) rasc(?:a|an|o|[óo]|aron|aba) la (?:cabeza|nuca|barba)'
+
+# cliches — stock phrases of Spanish prose (human and model alike).
+cliches:
+  - 'un nudo en (?:la garganta|el est[óo]mago)'
+  - '(?:el|su|mi) coraz[óo]n (?:le |me )?(?:dio un vuelco|dio un salto|lat[ií]a con fuerza|se aceler[óo])'
+  - 'se le hel[óo] la sangre'
+  - 'la sangre se le hel[óo]'
+  - 'como alma que lleva el diablo'
+  - 'blanc[oa] como (?:la leche|el papel|la nieve)'
+  - 'silencio sepulcral'
+  - 'en un abrir y cerrar de ojos'
+  - 'mariposas en el est[óo]mago'
+  - '(?:sus|los) ojos se (?:llenaron|nublaron|empa[ñn]aron) de l[áa]grimas'
+  - 'la calma (?:que precede a|antes de) la tormenta'
+  - 'la gota que colm[óo] el vaso'
+  - 'con el coraz[óo]n en la mano'
+  - 'se pod[ií]a cortar con (?:un )?cuchillo'
+  - 'un manojo de nervios'
+  - 'un sudor fr[ií]o'
+  - 'la piel de gallina'
+  - 'como si (?:le|me) hubieran dado una bofetada'
+  - 'el tiempo se detuvo'
+  - 'a la velocidad de la luz'
+  - 'contra viento y marea'
+
+# attribute_terms — physical attributes checked for consistency per character.
+# Each entry carries a named group `value`. Hair = colour (length and texture
+# change legitimately).
+attribute_terms:
+  eyes:
+    - 'ojos\s+(?:de\s+color\s+|color\s+)?(?P<value>negros|marrones|casta[ñn]os|verdes|azules|grises|celestes|miel|pardos|negras)'
+  hair:
+    - '(?:pelo|cabello|melena|cabellera)\s+(?:(?:muy|bien|medio)\s+)?(?P<value>rubi[oa]|casta[ñn][oa]|moroch[oa]|negr[oa]|pelirroj[oa]|colorad[oa]|canos[oa]|gris|blanc[oa]|te[ñn]id[oa])'
+  age:
+    - '(?:tiene|ten[ií]a|tengo|ten[eé]s|cumpli[óo]|cumple|cumpl[ií]a|de|con|a los|hab[ií]a cumplido)\s+(?P<value>\d{1,3}|[a-záéíóúñ]+(?:\s+y\s+[a-záéíóúñ]+)?)\s+a[ñn]os'

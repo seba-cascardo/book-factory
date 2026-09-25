@@ -1,214 +1,112 @@
 # Style Guide — [Project Name]
 
-<!--
-  TEMPLATE — style-guide.md. Copy to `bible/style-guide.md` and fill it during
-  setup (see `references/setup.md` § Sub-Phase 6). The human signs off before
-  writing begins. Read by every prose agent — Writer, Editor, Humanizer, Critic,
-  Continuity Guardian (Mode A) — every turn, alongside `bible/voice-profile.md`.
-
-  DIVISION OF LABOR — read this before filling either file. This style guide
-  holds the CALIBRATION PASSAGES and the MECHANICAL DECISIONS: person,
-  formality, formatting, code/dialogue conventions, terminology handling. The
-  companion `bible/voice-profile.md` holds the DISTINCTIVE FINGERPRINT, the
-  opening rotation, the rhetoric budget, and the derived GOOD examples. Rule of
-  thumb: reversible, mechanical, "which convention?" → here. Identity, "what
-  makes this document itself?" → voice profile.
-
-  NO GOOD PROSE EXAMPLES LIVE HERE except the calibration passages below.
-  Imitable in-voice GOOD examples belong in voice-profile.md § Project GOOD
-  examples, which is derived FROM the calibration passages you approve here.
-  That is why the passages are load-bearing twice: they set the voice now, and
-  they seed the only imitable prose in the system later.
-
-  Keep only the sections your profile uses (each is tagged with the profiles it
-  applies to). Delete instructional comments and bracketed placeholders before
-  sign-off. Keep it short and concrete — a long style guide goes unread.
--->
+<!-- templates/style-guide.md → bible/style-guide.md, filled at setup
+     (references/setup.md § Sub-phase 6) and signed by the human. Read every
+     turn by the prose agents with bible/voice-profile.md.
+     Division of labor: HERE the calibration passages and the mechanical,
+     reversible decisions ("which convention?"); in voice-profile.md the
+     identity — fingerprint, bans, budgets, GOOD examples (derived from the
+     passages below, so they are load-bearing twice). Keep only the sections
+     your profile uses; delete comments and placeholders before sign-off. -->
 
 Profile: [book-technical | book-literary | corporate-guide | product-docs | scientific-paper]
 
----
-
 ## Voice in one paragraph
+<!-- 3–4 sentences of concrete commitments and refusals — what the prose does
+     before abstracting, whether it admits trade-offs, its stance on opinion,
+     the moves it never makes. "Clear and engaging" calibrates nothing. -->
 
-<!--
-  3-4 sentences describing how a paragraph should FEEL. Not marketing copy —
-  "clear and accessible" (nonfiction) and "literary and evocative" (literary)
-  describe every document and calibrate nothing. Name concrete, checkable
-  habits: what the prose commits to, what it refuses. WHY here and not the
-  voice profile: this is the register envelope, the broad-strokes feel; the
-  sharp distinctive traits go in voice-profile.md § Fingerprint. Together they
-  brief a new agent in under a minute.
-
-  BAD: "An authoritative yet approachable voice that engages the reader."
-  Shape that passes: concrete commitments and refusals — e.g. what it does
-  before abstracting, whether it admits trade-offs, its stance on opinion, the
-  one or two moves it never makes.
--->
-
-[3-4 sentences.]
+[3–4 sentences.]
 
 ## Calibration passages
-
-<!--
-  THE MOST IMPORTANT PART OF THIS FILE. 1-3 short passages (100-300 words each)
-  in the target voice. They need not be from the actual document — they show how
-  a paragraph should feel. Sources: real text from a work the human is modeling
-  on, the human's own best writing, or drafts you write and refine together.
-
-  Draft, get feedback, refine until the human says "yes, THIS" — NOT polite
-  approval. A passage the human merely tolerates calibrates every downstream
-  agent to a voice nobody wanted. WHY it matters twice: these passages seed the
-  voice profile's GOOD examples (setup sub-phase 9), the only imitable prose in
-  the system. A weak calibration passage produces a weak fingerprint produces a
-  generic book.
-
-  Attribute each passage to its source (published author + work, "author's own",
-  or "drafted at setup"). 1 strong passage beats 3 weak ones — do not pad to 3.
--->
+<!-- 1–3 passages, 100–300 words, in the target voice; one strong beats three
+     weak. The line under each heading declares the source — human (written by
+     the human) | model (drafted at setup) | reference (a published author,
+     for contrast, not imitation) — and check_story.py counts `human`.
+     book-literary: at least literary.human_calibration_passages are `human`,
+     and every `model` passage is screened for counted tics. Iterate to
+     "yes, THIS", not polite approval. -->
 
 ### Passage 1 — [source]
+<!-- calibration-source: [human | model | reference] -->
 
-> [100-300 words in the target voice.]
+> [100–300 words.]
 
 ### Passage 2 — [source, optional]
+<!-- calibration-source: [human | model | reference] -->
 
 > [passage]
 
-### Passage 3 — [source, optional]
+## Register
+<!-- Per-project choices only; never restate the profile's prohibitions. -->
 
-> [passage]
+- Person: [you | we | impersonal]
+- Formality: [casual | neutral | formal]
+- Humor: [none | restrained, where … | allowed]
+- Authorial stance: [neutral | opinionated with rationale]
+- Literary: POV [first | close third | omniscient | …], tense [past |
+  present], prose register [sparse | lush | …], profanity and explicit-content
+  limits.
 
-## Register  <!-- all profiles -->
+## Do / Don't
+<!-- Mechanical, detectable, project-specific ("name the version whenever you
+     name a tool"). Identity traits go in voice-profile.md; universal rules are
+     already in the anti-mediocrity file. -->
 
-<!--
-  The mechanical register decisions. Fine-grained voice identity is NOT here —
-  it is in voice-profile.md. Here you fix the envelope. The profile arrives with
-  register defaults and hard prohibitions already set (e.g. corporate-guide bans
-  mic-drops, self-reference, cliffhangers, transformation promises); do NOT
-  restate the profile's prohibitions here — record only per-project choices and
-  any explicit deviation from a profile default. The Critic checks `voice-1`
-  (person) and `voice-7` (register match) against these.
--->
+- Do: […]
+- Don't: […]
 
-- **Person**: [you | we | impersonal] — pick one and hold it every unit.
-- **Formality**: [casual | neutral | formal] — within the profile's band.
-- **Humor**: [not allowed | restrained, where: … | allowed] — err toward less.
-- **Authorial stance**: [neutral reporting | opinionated with rationale].
-- **Literary only**: POV [first | close third | omniscient | …], tense
-  [past | present], prose register [sparse | lush | journalistic], profanity
-  and explicit-content boundaries. Delete this line for nonfiction.
+## Formatting
 
-## Do / Don't  <!-- all profiles -->
+- Heading case: [sentence | title] · Oxford comma: [yes | no]
+- Narration dash: [none | em-dash, no spaces | em-dash, spaced | en-dash,
+  spaced] — dialogue marks are set below and never count as dashes.
+- Numbers: [e.g. words < 10] · Dates: [format]
+- Language variant: [en-US | es-AR | …]
+- Literary: scene-break glyph [`* * *` | blank line]; quotation marks
+  [« » | “ ” | …] for quotes inside narration.
 
-<!--
-  Concrete, checkable moves this project commits to and rules out. These are
-  MECHANICAL style rules, not identity traits (traits → voice-profile.md § 1/2)
-  and not universal anti-mediocrity rules (those are in the anti-mediocrity
-  reference the prose agents already load — do not duplicate them). Keep each
-  item detectable so an agent can self-check and the Critic can verify.
+## Dialogue conventions  <!-- book-literary -->
 
-  BAD (identity, belongs in voice profile): "Sound like a trusted mentor."
-  BAD (already global): "No 'let's dive in'." (anti-mediocrity covers it)
-  Good shape (mechanical, project-specific): a concrete convention only this
-  project needs — e.g. "name the version whenever you name a tool", "no
-  em-dash where a comma works", "sentence-case headings only".
--->
+- Dialogue mark: [raya — (U+2014) | “ ” | « »]. Spanish raya: a raya opens
+  each line; an interjected tag is closed with another raya only when the line
+  continues (—No —dijo—. Mañana.); never a hyphen or an en-dash; dialogue is
+  never glued to a narration paragraph (`lint_fiction` `dialogue_format`).
+- Attribution: [plain verbs of saying (lexicon `speech_verbs_plain`) | action
+  beats | …]. "Said/asked only" is an English default; Spanish may use a wider
+  set of verbs of saying — only lexicon `speech_verbs_ornate` hits are defects.
+- Dialect and accent: [rendered through vocabulary | phonetic, where …].
 
-**Do**
+## Craft sources  <!-- book-literary, optional -->
 
-- [project-specific mechanical commitment]
-- […]
+- [None | sources chosen for this subgenre — see
+  `references/anti-mediocrity-literary.md` § 6]
 
-**Don't**
+## Tonal range  <!-- book-literary -->
 
-- [project-specific mechanical prohibition]
-- […]
+- Light where: […] · never light: […] · emotional ceiling: […] · humor: […]
 
-## Formatting  <!-- all profiles -->
+## Code conventions  <!-- profiles with code -->
 
-- Heading case: [sentence | title]
-- Oxford comma: [yes | no]
-- Dash style: [em, no spaces | em, spaced | en]
-- Numbers: [e.g., words < 10, digits ≥ 10, except in code]
-- Dates: [YYYY-MM-DD | Month D, YYYY]
-- Language variant: [en-US | en-GB | es-AR | es-ES | …]
-- **Literary**: scene break glyph [*** | line gap]; quote style
-  [curly | straight, single | double]. **Nonfiction**: delete this line.
+- Language + version: [pinned; checked against `validation_surface`]
+- Style: […] · Shell: […] · Comments: […]
+- Output blocks: [how expected output is shown] · Imports: [full first time?]
+- Prompt char: [$ user / # root — shown?]
 
-## Code conventions  <!-- profiles with code: book-technical, product-docs, some scientific-paper -->
+## Diagram conventions  <!-- if the project uses diagrams -->
 
-<!-- Delete this whole section if the project has no code. -->
+- Tool: [Mermaid | Graphviz | SVG | …] · labels, arrows, captions: […]
 
-- Language + version: [e.g., Python 3.12 — pin it; the Reviewer checks against
-  `meta.yaml → validation_surface`.]
-- Style: [PEP 8 + black, or whatever applies]
-- Shell: [bash | zsh | fish — pick one]
-- Comments: [sparse, only where the code doesn't explain itself]
-- Output blocks: [how expected output is shown — labeled? separate block?]
-- Imports: [shown full first time; elided later?]
-- Prompt char: [$ user / # root — shown or not?]
+## Terminology
 
-## Diagram conventions  <!-- profiles that use diagrams -->
+- Define terms on: [first use | glossary | both]. Never swap synonyms for a
+  glossary term (`bible/glossary.md`).
 
-<!-- Delete if no diagrams. -->
+## Anti-mediocrity additions
 
-- Tool: [Mermaid | Graphviz | ASCII | SVG | …]
-- Style rules: [labels, arrows, legends, caption format]
-
-## Dialogue conventions  <!-- book-literary only -->
-
-<!-- Delete this whole section for nonfiction profiles. -->
-
-- Attribution: ["said" default | voicey tags allowed where …]
-- Tag spacing / punctuation placement: […]
-- Profanity policy: […]
-- Dialect / accent: [phonetic | indicated through vocabulary only]
-
-## Terminology  <!-- all profiles; load-bearing for KG profiles -->
-
-<!--
-  The glossary lives in `bible/glossary.md`. State the handling rule here. WHY:
-  synonym cycling on load-bearing terms is a real Critic hit (`tech_b-2`,
-  `consistency-2`) — it reads as sloppiness and, in KG profiles, breaks the
-  concept graph. For book-technical / scientific-paper the KG enforces this
-  tree-wide; for product-docs the KG enforces terminology across the whole tree,
-  not adjacent units.
--->
-
-- Define terms on: [first use | glossary | both].
-- Never swap synonyms for a glossary term. If the glossary says "container",
-  every unit says "container" — not "execution unit", not "sandbox".
-
-## Anti-mediocrity additions  <!-- all profiles -->
-
-<!--
-  The global floor is `references/anti-mediocrity-nonfiction.md` or
-  `-literary.md`, which the prose agents already load — do NOT copy it here.
-  This section is for extra MECHANICAL banned words/patterns specific to this
-  project that fit nowhere above. Distinctive identity-level banned traits go in
-  voice-profile.md § Banned traits instead; put a pattern here only if it is a
-  plain lexical/mechanical ban (a word, a punctuation habit, a construction).
--->
-
-- [project-specific banned word or pattern, detectable]
-- […]
-
-## Tonal range  <!-- book-literary only -->
-
-<!-- Delete this whole section for nonfiction profiles. -->
-
-- Where the book can be light: [scenes / characters].
-- Where it must not be: [scenes / characters].
-- Emotional ceiling: [how much melodrama is acceptable].
-- Humor style: [dry | absurd | character-driven | none].
+- [plain lexical or mechanical bans specific to this project; identity-level
+  bans go in voice-profile.md]
 
 ---
-
-<!--
-  SIGN-OFF. The style guide is not valid until the human approves it — chiefly
-  the calibration passages, which seed the voice profile. Record it so the
-  handoff to sub-phase 9 (voice profile) is traceable.
--->
 
 Signed off by: [human] on [date].

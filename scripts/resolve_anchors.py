@@ -58,6 +58,7 @@ from bookkit.anchors import (  # noqa: E402
     AnchorResult, anchor_from_quote, blocks_for, resolve_anchor,
 )
 from bookkit.project import Project, add_common_args, load_project  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
 
 # `### \`final/unit-07.md:220\` — the optimized/standard hierarchy`
 DNT_HEADING = re.compile(r"^(###\s+`)([^`:]+):(\d+)(`.*)$")
@@ -93,7 +94,7 @@ def check_do_not_touch(project: Project, index: dict[str, list],
     if not path.exists():
         return rows, 0
 
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = read_text(path).splitlines()
     repaired = 0
     pending: list[tuple[int, str, int]] = []   # (heading index, rel, recorded line)
 
@@ -154,7 +155,7 @@ def check_findings(paths: list[Path], index: dict[str, list],
 
     for fpath in paths:
         try:
-            doc = json.loads(fpath.read_text(encoding="utf-8"))
+            doc = json.loads(read_text(fpath))
         except (json.JSONDecodeError, OSError) as exc:
             rows.append(_row(fpath.name, "(file)",
                              AnchorResult("NO-FILE", None, str(exc)), None))
@@ -308,8 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"counts": counts, "repaired": repaired,
-                                   "rows": rows}, indent=2, ensure_ascii=False),
-                       encoding="utf-8")
+                                   "rows": rows}, indent=2, ensure_ascii=False,
+                                  sort_keys=True), encoding="utf-8")
         if not args.quiet:
             print(f"[anchors] result -> {out}")
 

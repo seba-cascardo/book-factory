@@ -160,41 +160,33 @@ document teaches):
 ## Worked example 2 — vendor docs with version drift
 
 ```markdown
-### QlikAdmin-Nov2023
+### K8sDocs-1.28
 
-**Full title**: Qlik Sense Enterprise on Windows — Administration Guide
-**Author(s)**: Qlik (official documentation)
-**Edition / year / version covered**: November 2023 release
-**Format**: Full-text PDF + extracted .md + figures
-**File in this folder**: qlik-admin-nov2023.pdf (+ .md, -figures/)
+**Full title**: Kubernetes documentation — Concepts and Reference
+**Author(s)**: The Kubernetes project (official documentation)
+**Edition / year / version covered**: v1.28 snapshot
+**Format**: HTML export + extracted .md
+**File in this folder**: k8s-docs-1.28.md
 
 **Authoritative for**:
-- Deployment topologies (single-node, multi-node, geo-distributed)
-- Security rules and section access model
-- Task scheduling and reload chains
+- Workload resources (Pods, Deployments, Jobs)
+- `kubectl` command and flag reference
 
 **Not authoritative for**:
-- Qlik Cloud / SaaS — this is the on-prem guide only.
-- Front-end scripting best practices — the admin guide is infra-focused.
+- Managed-provider specifics (EKS, GKE, AKS) — generic docs only.
 
 **Known to be wrong on / outdated on**:
-- **Version drift**: document teaches Qlik Sense May 2024. Between November
-  2023 and May 2024 the following changed:
-  - Default authentication flow (IdP config)
-  - Some section access resolution rules
-  - New scheduling options in the task manager
+- **Version drift**: the document teaches v1.30. Sidecar containers and some
+  scheduling defaults changed between 1.28 and 1.30.
 
 **Version drift rule**:
-> Source covers Qlik Sense November 2023, document teaches May 2024. In units
-> on authentication, section access, or scheduling, treat source as advisory
-> only — flag divergences as "version drift, not error" and defer to current
-> docs or the SME.
+> Source covers v1.28, document teaches v1.30. In units on sidecars or
+> scheduling, treat the source as advisory — flag divergences as "version
+> drift, not error" and defer to the release notes or the SME.
 
 **How to cite when flagging a finding**:
-- "QlikAdmin-Nov2023, §[section from extracted .md]"
+- "K8sDocs-1.28, §[section from the extracted .md]"
 ```
-
----
 
 ## Curation rules
 
@@ -213,14 +205,19 @@ document teaches):
 4. **Update the "Known to be wrong on" list as you learn.** If during drafting
    you discover the source is wrong about something, log it here so future
    units don't defer to it on that topic.
-5. **Non-English sources are fine.** The Technical Reviewer works in whatever
+5. **Extract every source to `.md`.** `scripts/check_identifiers.py
+   --build-index` builds `bible/identifier-index.txt` from the `.md` extracts:
+   a function or command that exists only inside a PDF is unknown to the
+   check, and the Writer will be told it invented it. Rebuild the index when
+   sources change.
+6. **Non-English sources are fine.** The Technical Reviewer works in whatever
    language the sources are in. Flag the language in the entry if it is not
    English so the reviewer can cite appropriately.
-6. **Internal / private sources are fine.** If the author has access to an
+7. **Internal / private sources are fine.** If the author has access to an
    unpublished report, internal benchmark, or similar, add it with a note that
    citations will be generic ("internal benchmark, May 2025"). For a paper,
    confirm the venue permits the citation form before relying on it.
-7. **Sign-off is the SME's, not the assistant's.** A setup pass can propose
+8. **Sign-off is the SME's, not the assistant's.** A setup pass can propose
    draft entries from a TOC and cover pages, but `authoritative for`, `not
    authoritative for`, and `known to be wrong on` require human judgment.
    Don't publish a `sources.md` that hasn't been reviewed line by line by the

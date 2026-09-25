@@ -1,0 +1,9 @@
+concepts:
+  - id: concat
+    name: "Concat"
+    introduced_in: unit-01
+constraints:
+  no_cycles_in_requires: true
+  every_chain_terminates: true
+  every_concept_has_definition: true
+  every_concept_assigned_to_unit: true

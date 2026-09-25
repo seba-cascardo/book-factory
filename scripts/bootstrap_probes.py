@@ -41,8 +41,12 @@ except ImportError:  # pragma: no cover
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bookkit.project import Project, add_common_args, load_project  # noqa: E402
+from bookkit.lexicon import load as load_lexicon  # noqa: E402
+from bookkit.project import (  # noqa: E402
+    Project, add_common_args, as_list, load_project, natural_key,
+)
 from bookkit.segment import segment  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
 from bookkit.textmetrics import stopwords_for  # noqa: E402
 
 BASE_PATH = "bible/concept-probes.yaml"
@@ -65,7 +69,10 @@ GLOSSARY_TERM_RES = [
 # where most noun phrases follow an article, that silently loses nearly every
 # good candidate. This path is the whole retrofit story for a book with no
 # knowledge graph and no glossary, so losing it quietly is expensive.
-WORD_RE = re.compile(r"[A-Za-z][A-Za-z\-]*")
+#
+# Unicode letters, not [A-Za-z]: an ASCII class splits "María" into "Mar" + "a"
+# and "canción" into "canci" + "n", which silently empties a Spanish book.
+WORD_RE = re.compile(r"[^\W\d_][\w\-]*")
 NGRAM_SIZES = (2, 3)
 
 
@@ -82,9 +89,12 @@ def probe_from_name(cid: str, name: str, home: str = "",
     match: a book that spells a term two ways is exactly the book where the two
     spellings carry two slightly different claims.
     """
-    forms = [name] + list(synonyms or [])
-    alts = sorted({_term_pattern(f) for f in forms if f and f.strip()}, key=len,
-                  reverse=True)
+    forms = [str(name)] + [str(f) for f in as_list(synonyms)]
+    # Longest first so a longer form wins the alternation; ties broken by the
+    # text itself. Sorting a set by length alone left ties in hash order, so the
+    # regex — and the probe file — changed with PYTHONHASHSEED.
+    alts = sorted({_term_pattern(f) for f in forms if f and f.strip()},
+                  key=lambda a: (-len(a), a))
     return {
         "id": cid,
         "name": name,
@@ -133,7 +143,7 @@ def from_glossary(project: Project) -> list[dict]:
         return []
     seen: set[str] = set()
     out: list[dict] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in read_text(path).splitlines():
         for rx in GLOSSARY_TERM_RES:
             m = rx.match(line)
             if not m:
@@ -142,7 +152,7 @@ def from_glossary(project: Project) -> list[dict]:
             key = term.lower()
             if key in seen or not (2 <= len(term) <= 48):
                 break
-            if not re.fullmatch(r"[A-Za-z][\w()\- ]*", term):
+            if not re.fullmatch(r"[^\W\d_][\w()\- ]*", term):
                 break
             seen.add(key)
             out.append(probe_from_name(slugify(term), term))
@@ -157,7 +167,8 @@ def from_frequency(project: Project, min_units: int, limit: int) -> list[dict]:
     concept that lives in one unit cannot carry a cross-unit contradiction — and
     finding those is the entire point.
     """
-    stop = stopwords_for(project.language_variant)
+    lex = load_lexicon(project.language_variant, project.root)
+    stop = stopwords_for(project.language_variant, lex.get("stopwords"))
     units_by_phrase: dict[str, set[str]] = defaultdict(set)
     counts: Counter[str] = Counter()
 
@@ -166,6 +177,8 @@ def from_frequency(project: Project, min_units: int, limit: int) -> list[dict]:
             if r.kind in ("code", "blank", "hr"):
                 continue
             text = re.sub(r"`[^`]*`", " ", r.text).lower()
+            if r.kind == "heading":
+                text = text.lstrip("#")
             words = WORD_RE.findall(text)
             for n in NGRAM_SIZES:
                 for i in range(len(words) - n + 1):
@@ -178,13 +191,13 @@ def from_frequency(project: Project, min_units: int, limit: int) -> list[dict]:
 
     ranked = sorted(
         (p for p, u in units_by_phrase.items() if len(u) >= min_units),
-        key=lambda p: (-len(units_by_phrase[p]), -counts[p]),
+        key=lambda p: (-len(units_by_phrase[p]), -counts[p], p),
     )[:limit]
 
     out: list[dict] = []
     for phrase in ranked:
         probe = probe_from_name(slugify(phrase), phrase)
-        probe["home"] = sorted(units_by_phrase[phrase])[0]
+        probe["home"] = sorted(units_by_phrase[phrase], key=natural_key)[0]
         out.append(probe)
     return out
 

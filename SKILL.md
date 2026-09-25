@@ -19,414 +19,250 @@ description: >
 
 # Book Factory v3 — Multi-Agent Writing Framework
 
-A framework for producing long-form documents through a human-directed,
-AI-assisted pipeline. The human is the creative director. Agents draft, review,
-edit, polish, simulate readers, and gate — but never make strategic decisions
-about content direction. Nothing advances without explicit human sign-off.
-
-Version history lives in `CHANGELOG.md` — do not load it during normal
-operation.
-
----
+The human is the creative director: agents draft, review and gate, never
+decide content direction. Do not load `CHANGELOG.md` or `docs/` in normal
+operation — they are history, not instructions.
 
 ## Core principles
 
 1. **The human approves every phase transition.** The Critic can block a unit;
-   only the human can approve one.
-2. **Grounding before prose.** Nonfiction writers read the source library
-   before drafting and cite invisibly (or visibly, per profile). Claims trace
-   to sources.
-3. **One voice per project, not one voice per skill.** Agents calibrate
-   against the project's `bible/voice-profile.md` — its fingerprint, its
-   opening rotation, its own GOOD examples generated at setup. The skill's
-   reference files carry rules and BAD examples only. This is deliberate:
-   shared GOOD examples produce identical-sounding output across projects.
-4. **Countable quality gates.** The Critic's verdict is computed from a
-   scorecard; rhetoric budgets are counted, not felt.
-5. **Roles do not overlap.** Each agent owns a clean slice and flags outside
-   its scope via HTML comments instead of fixing silently. If every agent
-   fixes everything, the pipeline collapses into four identical rewrites.
-6. **The unit of analysis changes at the end.** Per-unit gates cannot see a
-   contradiction that spans two units — each reviewer sees one side and
-   approves it, correctly. Phase 4.5 re-audits the book as one document and
-   iterates until it converges. **No path leads from the last approved unit to
-   `complete` without it.**
-7. **Nothing is turned off silently.** Any check disabled leaves a `waivers`
-   entry in `project-status.yaml` naming who waived it, why, and what is owed.
-   A config value nobody looked at is how three agents once sat unrun for three
-   months while the project reported itself finished.
+   only the human approves one.
+2. **Grounding before prose.** Nonfiction claims trace to the source library.
+3. **One voice per project**: `bible/voice-profile.md`. Skill files carry rules
+   and BAD examples only.
+4. **Counted means counted by a script.** Rhetoric, identifiers, tics and role
+   diffs come from `scripts/` into `checks.json`; agents copy numbers, never
+   recount. Verdicts are computed from the scorecard (`references/rubric.md`).
+5. **Isolation makes review independent.** Critic, Reader-POV, skeptics and
+   auditors run as isolated subagents with a closed input list; cold readers
+   see clean text.
+6. **Roles do not overlap.** Each agent owns one slice and flags the rest via
+   HTML comments; role diffs are verified by script.
+7. **The unit of analysis changes at the end.** Phase 4.5 audits the whole
+   book; no path to `complete` skips it.
+8. **Nothing is turned off silently.** A disabled check leaves a `waivers`
+   entry in `project-status.yaml`: who (`waived_by`), why (`reason`), what is
+   owed (`debt`) — real text, not a placeholder, reason and debt 20+
+   characters; a waiver missing any of them does not count. The literary
+   rules R1–R4 have no waiver at all.
 
----
+## Profiles
 
-## Document profiles
+`bible/meta.yaml → project.profile`. Every agent loads its profile; on register
+or structure, **the profile wins**. The scripts read it stripped and
+lowercased; a missing or unknown profile stops them (exit 2).
 
-`bible/meta.yaml → project.profile` selects one of five profiles. Every agent
-loads the profile file at the start of its turn — it is short and changes how
-the agent writes, reviews, and gates.
+| Profile (`references/profiles/<profile>.md`) | Unit | Sequence |
+|---|---|---|
+| `book-technical` | chapter | linear |
+| `book-literary` | chapter | linear |
+| `corporate-guide` | section | linear-light |
+| `product-docs` | article | modular |
+| `scientific-paper` | section | imrad |
 
-| Profile | Unit | Sequence | Read first |
-|---------|------|----------|------------|
-| `book-technical` | chapter | linear | `references/profiles/book-technical.md` |
-| `book-literary` | chapter | linear | `references/profiles/book-literary.md` |
-| `corporate-guide` | section | linear-light | `references/profiles/corporate-guide.md` |
-| `product-docs` | article | modular | `references/profiles/product-docs.md` |
-| `scientific-paper` | section | imrad | `references/profiles/scientific-paper.md` |
-
-The profile declares: what the unit is called, register defaults and
-prohibitions, opening/closing policy, citation policy (invisible HTML comments
-vs. visible academic citations), running-example policy, rubric deltas,
-Reader-POV personas, and Phase 5 build targets. When this SKILL.md and a
-profile disagree on a register or structure question, **the profile wins** —
-that is the point of profiles.
-
-Files use `unit-NN` naming internally; when talking to the human, use the
-profile's word (chapter, article, section).
-
----
+Files say `unit-NN`; talk to the human in the profile's word.
 
 ## Phase detection — start here
 
-1. **User pointed to a folder**:
-   - `bible/meta.yaml` with `schema_version: "3.0"` → load
-     `project-status.yaml`, announce project, phase, current unit, last
-     completed step. Ask what to work on.
-   - `bible/meta.yaml` with another schema_version → tell the human this
-     project was built with an earlier version of the skill; offer to
-     re-scaffold and carry content over manually. There is no automatic
-     migration.
-   - No `bible/meta.yaml` → new project. Go to Phase 0.
-2. **No folder specified** → ask which folder to use or create, then Phase 0.
+- Folder with `bible/meta.yaml`, `schema_version: "3.4"` → load
+  `project-status.yaml`; announce project, phase, current unit, last step
+  (`runs.tsv`); ask what to work on.
+- Other `schema_version` → an earlier skill built it (`pipeline_step.py`
+  refuses it, exit 2); offer a fresh scaffold and manual carry-over
+  (`references/init-scaffold.md`), never migration.
+- Otherwise → Phase 0.
 
----
+## Phases
 
-## Phase 0: Init
+**0 — Init** (`references/init-scaffold.md`). One question: what are you
+writing? Map it to a profile, scaffold, stop for a go-ahead.
 
-Read `references/init-scaffold.md`. Ask only what changes the scaffold:
+**1 — Setup** (`references/setup.md`). A design conversation, sign-off per
+artifact: `meta.yaml`, scope, glossary, style guide with calibration passages,
+the mandatory voice profile, `sources/` (nonfiction), `claims-map.yaml`
+(paper). Literary adds human seeds (`literary.seeds`), the preserved
+`braindump.md`, ≥ `literary.human_calibration_passages` passages written by the
+human, characters, world, plot structure with the ending, arcs, timeline, story
+ledger, reader journal.
 
-1. **Profile** — ask "what are you writing?" and map the answer to one of the
-   five profiles. Propose, don't interrogate: if the user said "an internal
-   prompting guide for my company", that is `corporate-guide`, confirm and
-   move on.
-2. Scaffold the directory per the profile (literary gets characters/world/
-   plot; papers get claims-map; product-docs skips digests). Announce what was
-   created; proceed to Phase 1 on approval.
+**1.5 — Knowledge graph** (`references/knowledge-graph.md`). Full for
+`book-technical` and `scientific-paper`; terminology-only for `corporate-guide`
+and `product-docs`; skipped for literary.
 
----
+**2 — Outlining** (`references/outlining.md`). `outline/units.yaml`,
+human-approved before any writing. Literary: scene cards, causal chain, story
+ledger with planned payoffs, echo check on turning points, Reader-POV outline
+stress test and the design rubric (`references/rubric-literary.md`), then the
+readiness gate below.
 
-## Phase 1: Setup
+**Literary readiness — the user's rules, no waiver:**
 
-Read `references/setup.md`. Setup is a collaborative design session, not a
-form. It produces, with human sign-off per artifact:
+- **R1** Every character (protagonist, principal, secondary) has a complete,
+  signed sheet: backstory, personality, contradiction, want, need, voice, and
+  an arc with turning points and `resolves_in` (flat arcs name what they test).
+  Signed = the human approved it and you ran `python scripts/pipeline_step.py
+  sign <slug> --by <human>`; a later edit needs the questionnaire block and a
+  new signature.
+- **R2** The ending exists before drafting (`bible/plot-structure.md` front
+  matter); every arc resolves at or before `ending.final_unit`.
+- **R3** Drafting starts only when `python scripts/pipeline_step.py ready`
+  exits 0 — re-checked by every Writer `check`/`done`, `approve` and
+  `apply-edits`. If the human wants to start anyway, explain the rule and run
+  the questionnaire for what is missing (`references/character-questionnaire.md`).
+- **R4** Characters may join mid-book, but the questionnaire runs again and the
+  unit restarts at the Writer; the Writer never invents a named character.
+  Unnamed one-unit figures live in `bible/characters/_extras.md` (a label is
+  never a name); names only talked about, and places, live in `bible/world.md`
+  — any of them that speaks or acts on the page, or a § Names entry in a scene
+  card, is a character.
 
-- `bible/meta.yaml` — scope, audience, tone, conventions, pipeline config,
-  model tiers.
-- `bible/scope.md`, `bible/glossary.md`.
-- `bible/style-guide.md` — decisions + calibration passages (draft, get
-  feedback, refine until the human says "yes, THIS").
-- **`bible/voice-profile.md`** — mandatory for every profile. The project's
-  distinctive fingerprint, banned traits, opening rotation, closing policy,
-  rhetoric budget overrides, and the project's own GOOD examples derived from
-  the approved calibration passages. See `references/setup.md` § Voice
-  Profile. This artifact is what keeps this project from sounding like every
-  other project.
-- `bible/sources/` — grounding library: PDF → markdown extraction, guided
-  `sources.md` index with authoritative-for / known-wrong / version-drift,
-  human-signed. For `scientific-paper`, references can also be pulled via
-  Zotero/arxiv/citecheck MCP tools when connected.
-- Literary only: characters/, world.md, plot-structure.md, arcs.md,
-  timeline.md.
-- Paper only: `bible/claims-map.yaml` seeded with the core claims.
+These blocks are never overridable — not by a human approval over a red
+scorecard, `--human-override`, `approve --force`, or a gate waiver.
 
-## Phase 1.5: Knowledge graph
+Details: `references/profiles/book-literary.md`.
 
-Read `references/knowledge-graph.md`. Mandatory for `book-technical` and
-`scientific-paper`; terminology-only for `product-docs` and `corporate-guide`;
-skipped for literary (plot-structure and arcs serve that role).
-
-## Phase 2: Outlining
-
-Read `references/outlining.md` (profile branches). Output:
-`outline/units.yaml`, human-approved before any writing. Literary outlines mark
-beats as `scene` or `exposition-within-scene`; profiles with modular sequence
-outline standalone units with linked prerequisites; `scientific-paper` fixes
-the IMRaD writing order (Methods → Results → Introduction → Discussion →
-Abstract last).
-
-## Phase 3: Writing pipeline
-
-Read `references/pipeline.md` for the full specification — inputs/outputs per
-agent, verdicts, loopback rules, retry policy. Summary:
-
-**Nonfiction profiles** (`fast` default / `full` opt-in):
+**3 — Writing pipeline** (`references/pipeline.md`, authoritative).
 
 ```
-Writer → Technical Reviewer → Editor → Humanizer → [Reader-POV: full only]
-  → Continuity Guardian (Mode A: coherence) → Critic (GATE)
-  → [Adversarial Verify: if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian (Mode B: tracker)
-  → digest (sequential profiles) → archive
+Nonfiction (fast; full adds Reader-POV after the Humanizer):
+  Writer → Technical Reviewer → Editor → Humanizer → CG Mode A → checks
+  → Critic → [Adversarial] → Proofreader → Human review
+  → final/ → CG Mode B → digest → archive
+Literary:
+  Writer (by scene) → Editor (assembly) → Humanizer → Reader-POV
+  → CG Mode A → checks → Critic → [Adversarial] → Proofreader
+  → Human review → final/ → CG Mode B → digest → reader journal → archive
 ```
 
-**Literary**:
+You are the **orchestrator** and never draft unit prose.
+Dispatch each agent as a subagent with its agent file, the profile and its
+contract's exact inputs; bracket each run with `pipeline_step.py check` /
+`done`; run `clean` after every write to `humanized.md`, `checks` before the
+Critic. `done` exits `1` (re-dispatch), `3` (R3/R4 pause) or `4` (contract
+violation: re-dispatch once, the second escalates). Loop targets: `Writer |
+Editor | Humanizer | escalate`; `snapshot --reason …` before each loop, then
+every agent of the cycle runs with `--cycle N`; each reads its worklist; a
+cycle that fixes nothing stops at once (plateau rule); retry cap 2 (`fast`) or
+3 (`full`, literary), then the escalation packet
+(`references/loopback-handoff.md`). A Critic ESCALATE is no loop: escalation
+packet, unit `on_hold` until the human decides.
 
-```
-Writer → Editor → Humanizer → Reader-POV → Critic (GATE)
-  → [Adversarial Verify: if enabled] → Human review
-  → (on approval) Proofreader → Continuity Guardian → digest → archive
-```
+Agent files (`references/agents/`): `writer-` and `humanizer-` come in
+`-nonfiction` / `-literary`; `editor`, `reader-pov`, `continuity-guardian`,
+`critic` and `proofreader` serve both; `technical-reviewer` is nonfiction only;
+skeptics follow `references/adversarial-verify.md`. `meta.yaml → models` maps
+roles to tiers (`inherit` = session model); model IDs live only on a project's
+tiers.
 
-Invariants (memorize these; several v2 bugs came from drift on exactly these
-points):
+**Human packet** (short; `references/pipeline.md` § Human review): the
+proofread text that ships and the Proofreader's changes; nonfiction adds
+verdict, most important problem, failing rows, skips and retry summary;
+literary adds the 3 most singular and 3 most generic passages, tic counts, the
+reader-journal entry and 1–3 decisions. Approve (with a reason if the scorecard
+is red; never over a story block) → `python scripts/pipeline_step.py approve unit-NN` copies
+`proofread.md` to `final/` without HTML comments; reject with notes
+(`human-notes.md`); or defer.
 
-- The Critic always reads `humanized.md`, in every mode and profile.
-- The Humanizer runs every unit, in every mode. The Editor is structural only
-  and never applies prose fixes or Reviewer advisories — those belong to the
-  Humanizer.
-- Verdicts are computed from `drafts/unit-NN/scorecard.yaml` per
-  `references/rubric.md`. The Critic does not choose verdicts.
-- Retry cap: 2 (fast), 3 (full, literary). On cap hit produce the structured
-  escalation packet (`references/loopback-handoff.md`), never a vague "ask the
-  human".
-- After each agent run, append one line to `project-status.yaml → runs`:
-  `- [unit-NN, <agent>, <tier>, <cycle>, <ISO timestamp>]`. Nothing more —
-  token accounting proved unenforceable and was dropped.
+**4 — Assembly** (advisory). `sync_manuscript.py` builds `manuscript.md`
+(product-docs: index + cross-article audit); CG full-manuscript audit; polish
+pass (nonfiction `fast`) or tail tic pass (literary), with fix-then-verify.
 
-### Agent reference files
+**4.5 — Manuscript gate** (`references/manuscript-gate.md`; literary:
+`references/manuscript-gate-literary.md`). Fires automatically when the last
+unit is archived. Nonfiction runs MG-1…MG-7. Literary: MG-1/2/3/6 are
+`n/a (profile)`; it runs MG-4 (literary read), MG-5, MG-7, MG-S
+(`check_story.py --manuscript`), MG-T (`lint_fiction.py --book`) and MG-C
+(continuity and developmental audit, two passes each, like MG-4). Findings
+persist in `reviews/manuscript-gate-<run>/findings.jsonl` until resolved (a
+later re-audit or sweep, or `manuscript_gate.py --resolve KEY --status
+fixed|refuted|accepted-risk --note …` within the limits of
+`references/manuscript-gate.md` § Findings — deterministic findings never
+fixed or refuted by hand, agent `fixed` only after the text changed, literary
+MG-S and R1/R2 findings never); coverage lives in `subjects.json`;
+critical/major findings face a refutation pass. Verdict:
+`ERROR | BLOCKED | NEEDS-REVISION | PASS-PARTIAL | PASS`; one waiver type
+(`manuscript_gate.coverage`; never over literary MG-4/MG-C). Converged =
+`PASS` (or `PASS-PARTIAL` with a valid coverage waiver), no open
+critical/major, two distinct rounds with no new blocking finding, and
+(literary) `check_story.py --manuscript` exiting 0. A
+round past `max_rounds` is refused. Start: `python scripts/manuscript_gate.py
+--round 1`; exit `0` converged · `1` not converged · `2` ERROR.
 
-Load the agent's file fresh at the start of its turn, then the profile, then
-`bible/meta.yaml`, then (prose agents) `bible/voice-profile.md`.
-
-| Agent | Nonfiction | Literary |
-|-------|------------|----------|
-| Writer | `references/agents/writer-nonfiction.md` | `references/agents/writer-literary.md` |
-| Technical Reviewer | `references/agents/technical-reviewer.md` | — |
-| Editor | `references/agents/editor.md` | same file, § Literary |
-| Humanizer | `references/agents/humanizer-nonfiction.md` | `references/agents/humanizer-literary.md` |
-| Reader-POV | `references/agents/reader-pov.md` | same file, § Literary |
-| Critic | `references/agents/critic.md` | same file (loads literary rubric) |
-| Proofreader | `references/agents/proofreader.md` | same |
-| Continuity Guardian | `references/agents/continuity-guardian.md` | same |
-| Adversarial skeptics | `references/adversarial-verify.md` | same |
-| Concept Auditor (Phase 4.5) | `references/agents/concept-auditor.md` | same |
-| Rule Auditor (Phase 4.5) | `references/agents/rule-auditor.md` | — |
-
-### Anti-mediocrity reads
-
-| Agent | Loads |
-|-------|-------|
-| Writer, Humanizer, Critic, CG (Mode A) | `anti-mediocrity-nonfiction.md` or `anti-mediocrity-literary.md` per profile |
-| Technical Reviewer, Editor, Proofreader, Reader-POV, CG (Mode B) | none — scope discipline |
-
-These files contain rules and BAD examples only. GOOD examples live in the
-project's `bible/voice-profile.md`. Never import prose examples from the
-skill's references into a draft.
-
-### Model assignment
-
-`bible/meta.yaml → models` maps roles to **tiers**, not model IDs:
-
-```yaml
-models:
-  tiers: { creative: inherit, audit: inherit }   # inherit = session model
-  roles: { writer: creative, critic: creative, humanizer: audit, default: audit }
-```
-
-Literary projects set `humanizer: creative` (voice is the product). Set an
-explicit model ID on a tier only when the human wants cost control; never
-hardcode IDs anywhere else.
-
-## Phase 4: Assembly & review
-
-1. Sequential profiles: concatenate `final/unit-NN.md` → `manuscript.md`.
-   `product-docs`: no concatenation — build the index and cross-article
-   consistency audit instead.
-2. Continuity Guardian full-manuscript audit (includes orphan-terms coverage
-   for KG profiles).
-3. Proofreader over late-edited units.
-4. Optional polish pass (nonfiction fast mode): batch Reader-POV + Humanizer
-   over 3-4 approved units; proposed edits as a diff the human accepts or
-   rejects. See `references/pipeline.md` § Polish pass.
-5. Literary: singularity audit if 5+ units approved since the last one
-   (`references/agents/continuity-guardian.md` § Singularity audit).
-6. Style consistency report; the human decides final revisions.
-
-Everything in Phase 4 is advisory. The gate is next, and it is not.
-
-## Phase 4.5: Manuscript gate
-
-Read `references/manuscript-gate.md`. **Fires automatically** when the last unit
-reaches `archived` — write `phase: manuscript-gate` and start Round 1. Do not
-report the book finished from Phase 4.
-
-Seven checks over the whole book, not the unit:
-
-| | Question | Engine |
-|---|---|---|
-| MG-1 | Do all claims about one concept agree, across units? | dossiers + `concept-auditor` |
-| MG-2 | Does the book's code obey the rules its prose states? | rule candidates + `rule-auditor` |
-| MG-3 | Was everything an exercise demands actually taught? | `rule-auditor` |
-| MG-4 | Reading it end to end — **is it enough?** | `reader-pov` whole-book mode |
-| MG-5 | Does the source render as intended? | `scripts/lint_render.py` |
-| MG-6 | Did the code run, or is the debt declared? | runner audit + waivers |
-| MG-7 | Did a defect that was already fixed come back? | `scripts/check_fixed_defects.py` |
-
-Every `critical`/`major` from MG-1–4 goes through adversarial verification with a
-mandate to refute before it reaches the human.
-
-**The verdict is computed, and coverage is two of its terms** — any unresolved
-critical → `BLOCKED`; any unresolved major → `NEEDS-REVISION`; then
-`PASS-PARTIAL` if any subject was never opened, `PASS-SAMPLED` if all were opened
-but some only in part, else `PASS`. Neither partial state blocks the work; both
-block the claim. Without a coverage term a book reaches `complete` having audited
-30 of 474 candidate rules, and "two quiet rounds" is satisfied by construction
-because rounds 2+ re-read the same 30.
-
-The two axes are separate because they close by different work. **Breadth** closes
-on its own as rounds drain the pool. **Depth** closes by narrowing a subject in
-`bible/rule-probes-tuned.yaml` (the gate writes the ranked worklist to
-`round-N/rule-probes-proposed.yaml`) or by raising a concept's `home_cap` — human
-judgement, and sometimes the honest answer is that the rule really is that wide,
-which is what `manuscript_gate.depth` waives. Merging them made `PASS`
-unreachable by construction on any large technical book.
-
-**The gate iterates**: fixes are proposed, the human decides, accepted edits make
-the claim index emit `PROPAGATE`, and those siblings — **plus the next unaudited
-slice of the candidate pool** — become the next round's scope. Coverage therefore
-grows monotonically; `reviews/manuscript-gate-<date>/audited.yaml` is what
-remembers. It closes on `PASS` (or `PASS-PARTIAL` plus a signature-matching
-coverage waiver) **plus two consecutive rounds with no new blocking findings** —
-one clean round is not evidence. At `max_rounds` it escalates rather than
-relaxing the criterion.
-
-```bash
-python scripts/manuscript_gate.py --round 1        # prepare + verdict
-python scripts/manuscript_gate.py --verdict-only   # after dispatching auditors
-python scripts/resolve_anchors.py --heal           # after a fix pass
-```
-
-## Phase 5: Build & export
-
-Read `references/build-export.md`. Per profile: books → EPUB/PDF/DOCX (pandoc,
-or the docx/pdf skills when available); corporate guides → DOCX/PDF with the
-organization's front matter; product-docs → markdown tree with frontmatter
-ready for a static site; papers → LaTeX/PDF with formatted bibliography from
-the claims map. Output to `build/`. Always confirm targets with the human
-before building.
-
-Preflight, every profile: `lint_render.py --fail-on critical`,
-`sync_manuscript.py --check`, `validate_claim_index.py --quiet`.
+**5 — Build** (`references/build-export.md`). Confirm targets first. Preflight:
+`lint_render.py --fail-on critical`, `sync_manuscript.py --check`,
+`validate_claim_index.py --quiet`; literary adds `check_story.py --manuscript`.
 
 ## Definition of done
 
-`phase: complete` is not a label anyone may assert. It requires all of:
+`phase: complete` requires all of:
 
 1. every unit `archived`;
-2. the manuscript gate at `PASS` **and converged** — or partial with a
-   signature-matching waiver for each short axis (`manuscript_gate.coverage` for
-   breadth, `manuscript_gate.depth` for depth);
-3. no unresolved `CHANGED` in `bible/claim-index.yaml`;
-4. every build target verified;
-5. a done report the human accepted, listing open `waivers`, unresolved minors,
-   and — if the gate closed short on either axis — how much of the surface was
-   never opened, and which subjects were read only in part.
-
-Anything short of that is `blocked-on-manuscript-gate`, and saying so is the
-useful thing to do.
+2. the manuscript gate converged: `python scripts/manuscript_gate.py
+   --verdict-only` exits 0 (`references/manuscript-gate.md`);
+3. no unresolved `CHANGED` in `bible/claim-index.yaml` (where one exists);
+4. literary: every arc resolved, the ending delivered (`final_unit` in
+   `final/` with at least max(300, 30% of its target) words), the story ledger
+   closed (no `open` entry unless
+   `deliberately-ambiguous`) — `check_story.py --manuscript` exits 0;
+5. every build target verified;
+6. a done report the human accepted: open waivers, unresolved minors, and what
+   the gate never opened. Otherwise: `blocked-on-manuscript-gate`.
 
 ## Scripts
 
-Deterministic checks live in `scripts/` and run without a model. Python 3.10+
-and PyYAML; `git` optional (it powers the incomplete-fix detector). They all
-accept `--root` and `--units`, so every one of them also runs standalone over a
-book this skill never scaffolded. See `scripts/README.md`.
+Python 3.10+, PyYAML, all accept `--root`; word lists live in
+`scripts/lexicons/<lang>.yaml` + `bible/lexicon.yaml`. See `scripts/README.md`.
 
-| Script | What it is for |
+| Script | Purpose |
 |---|---|
-| `manuscript_gate.py` | Phase 4.5: deterministic sweep, agent inputs, verdict |
-| `lint_render.py` | MG-5 rendering hazards; build preflight gate |
-| `build_concept_dossier.py` | MG-1 dossiers and `bible/claim-index.yaml` |
-| `validate_claim_index.py` | `PROPAGATE` — what else says the same thing |
-| `bootstrap_probes.py` | Seeds concept probes from the KG, glossary, or frequency |
-| `extract_rule_candidates.py` | MG-2 rule ↔ instance pairing |
-| `check_fixed_defects.py` | MG-7 — a fixed defect must not come back |
-| `resolve_anchors.py` | References by content anchor; `--heal` after a fix pass |
-| `extract_code_corpus.py` | MG-6 verification-plan raw material |
-| `lint_style.py` | The Proofreader's mechanical half |
-| `sync_manuscript.py` | `final/` → `manuscript.md`, with `--check` |
-
----
-
-## Human review packet (every unit, every profile)
-
-Present together: the unit text (`humanized.md`); the Critic's computed
-verdict + failing scorecard items with evidence; the Critic's observations;
-`tech-review.md` (nonfiction) with any skipped-check notes made explicit;
-`coherence.md` or `reader-report.md`; the adversarial report if it ran; retry
-summary; the one-line run log for the unit.
-
-The human can approve (even against a red scorecard — record the rationale),
-reject with notes (routed to the agent they name, counts against the retry
-cap), or defer. The scorecard is decision support, not authority.
-
----
+| `pipeline_step.py` | `check`/`done` brackets, `clean`, `snapshot`, `checks`, `ready`, `approve`, `apply-edits`, `sign` |
+| `count_rhet.py` · `check_identifiers.py` | Rhetoric and prose counts · invented identifiers (`--build-index`) |
+| `check_role_diff.py` | Editor adds no prose; Humanizer budget; Proofreader changes |
+| `lint_fiction.py` · `check_story.py` | Literary tics, dialogue, names · readiness, arcs, ending, ledger |
+| `manuscript_gate.py` | Phase 4.5 sweep, agent inputs, verdict |
+| `lint_render.py` · `lint_style.py` | Render hazards (MG-5, preflight) · the Proofreader's mechanical half |
+| `build_concept_dossier.py` · `validate_claim_index.py` · `bootstrap_probes.py` | MG-1 dossiers and claim index · `PROPAGATE` · concept probes |
+| `extract_rule_candidates.py` · `check_fixed_defects.py` · `extract_code_corpus.py` | MG-2 · MG-7 · MG-6 inputs |
+| `resolve_anchors.py` · `sync_manuscript.py` | Content anchors (`--heal`) · `final/` → `manuscript.md` |
 
 ## Project file structure
 
 ```
 project/
 ├── bible/
-│   ├── meta.yaml              # profile, audience, pipeline, models (tiers)
-│   ├── voice-profile.md       # fingerprint, opening rotation, budgets, GOOD examples
-│   ├── style-guide.md         # decisions + calibration passages
-│   ├── scope.md · glossary.md · knowledge-graph.yaml · continuity-tracker.md
-│   ├── sources/               # PDFs + .md extractions + figures/ + sources.md index
-│   ├── claim-index.yaml       # concept × location + propagation (generated)
-│   ├── concept-probes.yaml    # generated · concept-probes-tuned.yaml (hand-written)
-│   ├── rule-probes-tuned.yaml # hand-written; narrows wide rules so MG-2 depth
-│                              # can close by work rather than by waiver
-│   ├── audit-config.yaml      # fix-run commits, persona names, code kinds
-│   ├── do-not-touch.md        # auto-refutation anchors — verified-correct passages
-│   ├── fixed-defects.yaml     # MG-7 — defective formulations that must not return
-│   ├── claims-map.yaml        # scientific-paper only
-│   ├── characters/ world.md plot-structure.md arcs.md timeline.md   # literary only
-│   ├── examples-library.md    # profiles with a running example
-│   └── digests/               # sequential profiles only
+│   ├── meta.yaml · voice-profile.md · style-guide.md · scope.md · glossary.md
+│   ├── continuity-tracker.md · do-not-touch.md · fixed-defects.yaml
+│   ├── lexicon.yaml               # optional: the book's own tics and terms
+│   ├── sources/ (+ sources.md) · identifier-index.txt   # nonfiction
+│   ├── knowledge-graph.yaml · examples-library.md · claims-map.yaml (paper)
+│   ├── claim-index.yaml · concept-probes*.yaml · rule-probes-tuned.yaml
+│   ├── characters/<slug>.md · characters/_extras.md       # literary
+│   ├── plot-structure.md · arcs.md · world.md · timeline.md
+│   ├── story-ledger.yaml · reader-journal.md · braindump.md
+│   └── digests/
 ├── outline/units.yaml
-├── drafts/unit-NN/            # grounding-notes.md draft.md tech-review.md edit.md
-│                              # humanized.md reader-report.md coherence.md
-│                              # critique.md scorecard.yaml adversarial-report.md
+├── drafts/unit-NN/     # draft edit humanized(.clean|.cN) proofread checks.json/.md
+│                       # critique scorecard(.cN) role-diff-<agent>-cN.json
+│                       # tech-review coherence reader-report human-notes …
 ├── drafts/_archive/ · drafts/_polish/
-├── final/unit-NN.md
-├── project-status.yaml        # phase, retries, runs, waivers, manuscript_gate
-├── manuscript.md              # Phase 4, generated by scripts/sync_manuscript.py
-├── reviews/manuscript-gate-<date>/   # Phase 4.5: GROUNDING.md, audited.yaml,
-│                              # state.json, round-N/ (coverage-*.json,
-│                              # coverage-summary.md, findings/), REPORT.md
-└── build/                     # Phase 5 outputs
+├── final/unit-NN.md · manuscript.md
+├── runs.tsv            # one line per agent run (pipeline_step.py done)
+├── project-status.yaml # phase, units, retries, waivers, gate pointer
+├── reviews/manuscript-gate-<run>/
+└── build/
 ```
-
----
 
 ## Reference map (load on demand)
 
-| Trigger | Read |
-|---------|------|
-| New project | `references/init-scaffold.md` |
-| Setup | `references/setup.md` |
-| Any agent turn | `references/profiles/<profile>.md` + the agent file |
-| Knowledge graph | `references/knowledge-graph.md` |
-| Outlining | `references/outlining.md` |
-| Pipeline (full spec) | `references/pipeline.md` |
-| Critic scorecard + verdicts | `references/rubric.md` |
-| Machine checks (Axis A/C) | `references/validation-surface.md` |
-| Adversarial pass | `references/adversarial-verify.md` |
-| Retry cap hit | `references/loopback-handoff.md` |
+| When | Read |
+|---|---|
+| Init · setup · KG · outline | `references/init-scaffold.md` · `setup.md` · `knowledge-graph.md` · `outlining.md` |
+| Pipeline, loops, packet, batch passes | `references/pipeline.md` |
+| Scorecard, verdict, Critic protocol | `references/rubric.md` + `references/rubric-nonfiction.md` or `references/rubric-literary.md` |
+| Literary characters (R1–R4) | `references/character-questionnaire.md` |
+| Machine checks | `references/validation-surface.md`; optional packs, e.g. `references/surfaces/qlik.md` |
+| Adversarial · cap or plateau | `references/adversarial-verify.md` · `references/loopback-handoff.md` |
 | After approval | `references/chapter-digest.md` + `references/archiving.md` |
-| Last unit archived | `references/manuscript-gate.md` — **not optional** |
-| Claim propagation, "what else says this?" | `references/claim-index.md` |
-| Executable code with no runner | `references/verification-plan.md` |
-| Phase 5 | `references/build-export.md` |
-
-Templates live in `templates/` — the scaffold copies from these. The
-scorecard template is `templates/scorecard.yaml` and the per-unit artifact is
-always `drafts/unit-NN/scorecard.yaml`.
+| Last unit archived | `references/manuscript-gate.md` (+ `references/manuscript-gate-literary.md`) |
+| Propagation · unverifiable claims · Phase 5 | `references/claim-index.md` · `verification-plan.md` · `build-export.md` |
+| Why a rule exists (humans) | `docs/rationale/*.md` |

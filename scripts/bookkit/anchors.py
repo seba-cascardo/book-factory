@@ -2,40 +2,22 @@
 # -*- coding: utf-8 -*-
 """Content anchors — a reference that survives an edit somewhere else.
 
-## Why line numbers alone are not enough
-
-MEASURED, during a one-day fix pass on the reference book: the extractor's gate
-broke **three times in a day, and two of those were because a section was ADDED,
-not because anything was wrong.** Everything below the insertion shifted, every
-line-keyed reference went stale at once, and the output was noise.
-
-A gate that shouts when nothing happened gets switched off within a week — the
-same failure mode the waivers section exists to prevent, arriving through a
-different door.
-
-The claim index already solved this for passages, with fingerprints. What stayed
-keyed on line numbers was everything else: `bible/do-not-touch.md`, the
-`location` and `other_sites` of findings, and the scope of any check that pins a
-passage. This module gives them the same property.
-
-## The four cases
+Line-keyed references (`bible/do-not-touch.md`, findings' `location` and
+`other_sites`) go stale the moment a section is inserted above them. An anchor is
+a short verbatim substring stored next to the line number. Four cases:
 
     1. the line resolves and the anchor is there          OK
     2. the anchor is nowhere in the file                  EDITED — revalidate
     3. the anchor is somewhere else, exactly once         DRIFT — use it, report
     4. the anchor appears more than once                  AMBIGUOUS — noisy fail
 
-Case 2 is the valuable one and the one a line number cannot express: it
-distinguishes *"it moved"* from *"they changed it"*. A moved passage is
-bookkeeping and `--heal` fixes it. A changed passage means the thing the
-reference protected may no longer be there, and somebody has to look.
+Case 2 is the one a line number cannot express: "it moved" vs "they changed it".
 
-## Matching is whitespace-insensitive, and nothing else
-
-Books are hard-wrapped, so a verbatim anchor spanning a line break would never
-match the raw text. Anchors are compared against logical paragraphs with
-whitespace collapsed. Case, punctuation and wording are compared exactly: an
-anchor that matches a reworded passage is not an anchor, it is a guess.
+Matching: first exact with whitespace collapsed; if that finds nothing, again with
+markdown markup (emphasis, backticks, link syntax, quote markers) removed on both
+sides — a finding quotes what the auditor READ, which is often the rendered form.
+Wording, case and punctuation are always compared exactly. A code block is ONE
+block, so an anchor may span its lines.
 """
 
 from __future__ import annotations
@@ -47,11 +29,20 @@ from pathlib import Path
 from .segment import paragraphs, segment
 
 _WS = re.compile(r"\s+")
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_EMPH = re.compile(r"\*+|`+|(?<!\w)_+|_+(?!\w)")
 
 
 def norm(text: str) -> str:
-    """Collapse whitespace. Nothing else — see the module note."""
+    """Collapse whitespace. Nothing else."""
     return _WS.sub(" ", text).strip()
+
+
+def norm_loose(text: str) -> str:
+    """Whitespace collapsed and markdown markup removed; wording untouched."""
+    t = _LINK.sub(r"\1", text)
+    t = re.sub(r"(?m)^\s*>\s?", "", t)
+    return norm(_EMPH.sub("", t))
 
 
 @dataclass
@@ -59,17 +50,32 @@ class Block:
     line: int
     end_line: int
     kind: str
-    text: str      # already normalized
+    text: str      # whitespace-normalized
 
 
 def blocks_for(path: Path, root: Path | None = None) -> list[Block]:
-    """Logical paragraphs (and code lines) of one file, whitespace-collapsed."""
+    """Logical paragraphs and whole code blocks of one file."""
     out: list[Block] = []
+    code: list = []
+
+    def flush_code() -> None:
+        if code:
+            out.append(Block(line=code[0].line, end_line=code[-1].line, kind="code",
+                             text=norm(" ".join(r.text for r in code))))
+            code.clear()
+
     for r in paragraphs(segment(path, rel_to=root)):
+        if r.kind == "code":
+            code.append(r)
+            if r.fence == "close":
+                flush_code()
+            continue
+        flush_code()
         if r.kind == "blank":
             continue
         out.append(Block(line=r.line, end_line=r.end_line or r.line,
                          kind=r.kind, text=norm(r.text)))
+    flush_code()
     return out
 
 
@@ -84,9 +90,14 @@ class AnchorResult:
         """True when --heal can repair this by rewriting the line number."""
         return self.status == "DRIFT"
 
-    @property
-    def needs_a_human(self) -> bool:
-        return self.status in ("EDITED", "AMBIGUOUS", "NO-FILE")
+
+def _hits(blocks: list[Block], anchor: str) -> list[Block]:
+    needle = norm(anchor)
+    hits = [b for b in blocks if needle in b.text]
+    if hits:
+        return hits
+    loose = norm_loose(anchor)
+    return [b for b in blocks if loose and loose in norm_loose(b.text)]
 
 
 def resolve_anchor(blocks: list[Block], line: int | None,
@@ -94,39 +105,27 @@ def resolve_anchor(blocks: list[Block], line: int | None,
     """Locate a reference by its anchor, using the line only as a hint."""
     if not anchor or not anchor.strip():
         return AnchorResult("NO-ANCHOR", line,
-                            "no anchor recorded — this reference is keyed on a line "
-                            "number alone and will go stale the next time anything "
-                            "above it is edited")
-    needle = norm(anchor)
-    hits = [b for b in blocks if needle in b.text]
-
+                            "no anchor recorded — keyed on a line number alone, it goes "
+                            "stale the next time anything above it is edited")
+    hits = _hits(blocks, anchor)
     if len(hits) > 1:
         return AnchorResult(
             "AMBIGUOUS", hits[0].line,
             f"the anchor matches {len(hits)} passages "
-            f"({', '.join(str(b.line) for b in hits[:5])}) — it is not specific "
-            f"enough to identify one, so lengthen it")
+            f"({', '.join(str(b.line) for b in hits[:5])}) — lengthen it")
     if not hits:
         return AnchorResult(
             "EDITED", None,
             "the anchor is nowhere in the file: the passage was CHANGED, not moved. "
-            "Whatever this reference asserted about it has to be re-checked before "
-            "the line number is repaired")
-
+            "Re-check what this reference asserted before repairing the line")
     hit = hits[0]
     if line is not None and hit.line <= line <= (hit.end_line or hit.line):
         return AnchorResult("OK", hit.line)
-    return AnchorResult(
-        "DRIFT", hit.line,
-        f"the passage moved: recorded at :{line}, found at :{hit.line}. Repairable "
-        f"with --heal")
+    return AnchorResult("DRIFT", hit.line,
+                        f"the passage moved: recorded at :{line}, found at :{hit.line}. "
+                        f"Repairable with --heal")
 
 
 def anchor_from_quote(quote: str, words: int = 9) -> str:
-    """A usable anchor from a verbatim quote a finding already carries.
-
-    Findings already require a verbatim `quote`, so most references can be
-    anchored with no new authoring at all. Short enough to survive a
-    neighbouring edit, long enough to be unique in practice.
-    """
+    """A usable anchor from the verbatim quote a finding already carries."""
     return " ".join(norm(quote).split()[:words])

@@ -43,6 +43,12 @@
 #                  MUST resolve in bible/knowledge-graph.yaml — checked at KG
 #                  sign-off and again by the paper outliner. [] if the claim
 #                  rests on no formal concept.
+#
+# Number provenance (paper-5): every number in the prose traces to an entry
+# here, a <!-- SOURCE: … --> comment, or an <!-- ARTIFACT: path[#table|:line] -->
+# pointer to the file or script that produces it. An own-result entry's
+# `artifact` must be that producing file — "the results table" is not
+# provenance. Orphan numbers become verification-plan items.
 
 claims:
   # --- Example: external claim (delete once real claims exist) ---

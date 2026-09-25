@@ -1,166 +1,139 @@
-# outline/units.yaml — per-unit entry template (multi-shape)
+# outline/units.yaml — per-unit entry template (one shape per profile)
 #
-# outline/units.yaml is a LIST of entries, one per unit, in the order the
-# READER meets them (files are unit-NN regardless of writing order). Each
-# entry uses the SHAPE for the project's profile — pick one block below and
-# delete the rest. See references/outlining.md for the per-profile verification
-# rules and how to present the outline to the human.
+# A LIST of entries in the order the READER meets them. Use the shape for the
+# project's profile and delete the rest; verification rules per profile are in
+# references/outlining.md. `unit` is the file id as a string ("unit-01", not
+# 01, which YAML reads as the integer 1). Talk to the human in the profile's
+# word (chapter | article | section).
 #
-#   Profile           Shape to use
-#   ----------------  --------------------------------------------------------
-#   book-technical    § TECHNICAL
-#   book-literary     § LITERARY
-#   corporate-guide   § LIGHT (corporate-guide variant)
-#   product-docs      § LIGHT (product-docs variant)
-#   scientific-paper  § SCIENTIFIC-PAPER
-#
-# `unit` numbers are reading-order and are stable ids for drafts/unit-NN/.
-# When talking to the human, use the profile's word (chapter | article |
-# section) — the files stay unit-NN.
+#   book-technical → § TECHNICAL    book-literary → § LITERARY
+#   corporate-guide, product-docs → § LIGHT    scientific-paper → § PAPER
 
 units:
 
   # ==========================================================================
-  # § TECHNICAL  —  profile: book-technical
-  # Verified for dependency order, orphans, exercise coverage, pacing.
+  # § TECHNICAL — book-technical
   # ==========================================================================
-  - unit: 01
+  - unit: unit-01
     title: ""
-    part: ""                    # section/part this unit belongs to
-    gate_critical: false        # see § gate_critical at the bottom of this file
-    purpose: ""                 # ONE sentence: what the reader can DO after this unit
+    part: ""
+    gate_critical: false        # § gate_critical below
+    purpose: ""                 # ONE sentence: what the reader can DO after it
     concepts_introduced: []     # KG ids this unit is the authoritative intro for
-    concepts_used:              # KG ids used here + where each was introduced
+    concepts_used:              # KG ids used here, with where each was introduced
       - id: ""
-        introduced_in: unit-NN  # dependency verification runs on this; must be earlier
-    structure:                  # section headings with one-line coverage each
+        introduced_in: unit-NN  # must be earlier
+    structure:
       - heading: ""
         covers: ""
-    examples:                   # what each demonstrates; runnable or not
+    examples:
       - shows: ""
         runnable: true
-    exercises:                  # prompt + solution sketch + concepts exercised
+    exercises:
       - prompt: ""
         solution_sketch: ""
         concepts: []
-    forward_references:         # concepts DELIBERATELY deferred (declared = fine)
+    forward_references:         # DELIBERATE deferrals (declared = fine)
       - concept: ""
         deferred_to: unit-NN
-        why: ""                 # one-line justification for deferring
-    risks: []                   # where readers get stuck; misconceptions to preempt
-    closing: ""                 # per the profile's closing policy (pedagogy-3)
+        why: ""
+    risks: []                   # where readers get stuck; misconceptions
+    closing: ""                 # per the closing policy
     target_words: 0
 
   # ==========================================================================
-  # § LITERARY  —  profile: book-literary
-  # Verified for arc progression, tension curve, subplot cadence, midpoint,
-  # and the secondary-character line check.
+  # § LITERARY — book-literary
+  # Beats are scene cards: the Writer's contract and the Critic's checklist.
+  # characters_present holds SLUGS; a name without a sheet triggers R4.
   # ==========================================================================
-  - unit: 01
+  - unit: unit-01
     title: ""
-    gate_critical: false        # see § gate_critical at the bottom of this file
-    pov: ""                     # whose viewpoint
-    timeline: ""                # story chronology (may differ from reading order)
-    location: ""
-    beats:                      # every beat typed scene | exposition-within-scene
-      - type: scene
+    gate_critical: false
+    key_scene: false            # true → the Writer drafts literary.key_scene_versions
+                                # divergent versions of the card marked key: true;
+                                # the human picks
+    pov: ""                     # slug
+    timeline: ""                # story date + weekday + time, e.g. "Sun 2019-03-17, evening"
+    location: ""                # a place; its capitalized words are places, never people
+    characters_present: []      # slugs
+    arc_moves: []               # [{character: slug, turning_point: 1}] — 1-based index
+                                # into the sheet's arc.turning_points
+    beats:
+      - id: s1
+        type: scene             # scene | exposition-within-scene
+        key: false              # the key scene of a key_scene unit
+        words: 0                # planned
         summary: ""
-        pause: ""               # OPTIONAL: name the turn (interruption / internal
-                                # change) that ends a deliberate slow beat — craft-2
-      - type: exposition-within-scene
-        summary: ""
-        information: ""         # the fact being delivered
-        actioned_by: ""         # who wants it / withholds it / what it costs — craft-1
-    emotional_arc:              # the POV's inner movement across the unit
-      start: ""
-      shift: ""
-      end: ""
-    plot_threads:               # thread bookkeeping
-      advances: []
-      introduces: []
-      resolves: []
-    chekhov:                    # plants and payoffs (tracked in continuity-tracker)
-      load: []                  # what is planted here
-      fire: []                  # what earlier plant pays off here
-    reveals:
-      to_reader: []
-      to_characters: []
-    characters_present: []      # feeds the secondary-character tally across units
-    secondary_lines:            # guarantee a line of their own for 2+-appearance chars
-      - character: ""
-        note: ""                # the want / objection / joke that is theirs — craft-3
-    continuity_notes: ""
+        link: ""                # "therefore …" / "but …": how the previous scene causes this one
+        want: ""                # POV want (required for scenes >= 300 planned words)
+        opposition: ""
+        pivot: ""
+        value: {name: "", from: "+", to: "-"}
+        crisis: ""              # the dilemma: a choice between two costs
+        attempts: [{action: "", fails_because: ""}]   # optional; tension and key scenes
+        information: ""         # exposition-within-scene: the fact delivered
+        actioned_by: ""         # who wants it, withholds it, or pays to say it
+        pause: ""               # optional: the turn that ends a deliberate slow beat
+        ledger: {plants: [], pays: []}                # story-ledger ids
+    emotional_arc: {start: "", shift: "", end: ""}    # the POV's inner movement
+    plot_threads: {advances: [], introduces: [], resolves: []}
+    reveals: {to_reader: [], to_characters: []}
+    secondary_lines:            # a line of their own for recurring secondaries (craft-3)
+      - character: ""           # slug
+        note: ""
     target_words: 0
-    notes: ""
+    notes: ""                   # echo-check decisions, dormant subplots, open questions
 
   # ==========================================================================
-  # § LIGHT  —  corporate-guide variant  (profile: corporate-guide)
-  # Every opening self-contained; cross-refs by topic, never numbered.
+  # § LIGHT — corporate-guide
+  # Openings self-contained; cross-refs by topic, never by number.
   # ==========================================================================
-  - unit: 01
+  - unit: unit-01
     title: ""
-    gate_critical: false        # see § gate_critical at the bottom of this file
+    gate_critical: false
     purpose: ""                 # what the employee can do or decide after reading
-    audience_moment: ""         # WHEN someone reaches for this — a meeting, an
-                                # incident, an approval request
+    audience_moment: ""         # WHEN someone reaches for it: a meeting, an incident, an approval
     key_points: []
-    practice:                   # OPTIONAL — only if enabled in meta.yaml; internal cases
-      - prompt: ""              # "apply this to your own [internal case]"
-    templates_and_checklists: [] # artifacts this section ships (Note/Template/Checklist)
-    cross_refs: []              # TOPIC-based only: "escalation paths" — never "Section 3"
+    practice:                   # OPTIONAL, only if enabled in meta; internal cases
+      - prompt: ""
+    templates_and_checklists: []
+    cross_refs: []              # topics ("escalation paths"), never "Section 3"
     target_words: 0
 
-  # ==========================================================================
-  # § LIGHT  —  product-docs variant  (profile: product-docs)
-  # Modular STRICT: no forward references, no assumed prior reading. Prereqs
-  # are LINKED. `description`, `tags`, `related` also become the article's
-  # final/unit-NN.md frontmatter.
-  # ==========================================================================
-  - unit: 01
-    title: ""                   # task-phrased: "Rotate an API key", not "API keys"
-    gate_critical: false        # see § gate_critical at the bottom of this file
-    description: ""             # ONE sentence, ≤160 chars — becomes frontmatter/search
+  # § LIGHT — product-docs. Modular: no forward references, no assumed reading;
+  # prerequisites are LINKED. description, tags, related become frontmatter.
+  - unit: unit-01
+    title: ""                   # task-phrased: "Rotate an API key"
+    gate_critical: false
+    type: how-to                # Diátaxis: tutorial | how-to | reference | explanation (docs-3)
+    description: ""             # ONE sentence, <= 160 chars
     user_goal: ""
-    prerequisites: []           # LINKS to other articles (unit ids/slugs) — never assumed
-    structure:                  # steps or sections
+    prerequisites: []           # links to other articles
+    structure:
       - heading: ""
         covers: ""
-    tags: []                    # from the finite shared tag list defined in the outline
-    related: []                 # articles to surface at the end (related-links closing)
+    tags: []                    # from the finite tag list defined in the outline
+    related: []
     target_words: 0
 
   # ==========================================================================
-  # § SCIENTIFIC-PAPER  —  profile: scientific-paper
-  # Reading-order `unit`; the pipeline WALKS units by ascending
-  # writing_order_rank: Methods → Results → Introduction → Discussion →
-  # Abstract last (Abstract gets the highest rank).
+  # § PAPER — scientific-paper
+  # Reading-order `unit`; the pipeline walks ascending writing_order_rank:
+  # Methods → Results → Introduction → Discussion → Abstract (highest rank).
   # ==========================================================================
-  - unit: 01
+  - unit: unit-01
     name: ""                    # Abstract | Introduction | Methods | Results | ...
-    gate_critical: false        # see § gate_critical at the bottom of this file
-    writing_order_rank: 0       # integer walk order; Abstract gets the highest rank
-    claims: []                  # claim ids from bible/claims-map.yaml this section argues
-    key_moves: []               # the section's argumentative steps, one line each
-    figures_tables:             # planned, each tied to the claim it supports
-      - ref: ""                 # "Figure 2" / "Table 1"
-        supports_claim: ""      # claim id
-    evidence_needed: ""         # what must be grounded before this section can gate
-    checklist: ""               # Methods → reproducibility checklist;
-                                # Discussion → Limitations is a MANDATORY move (critical)
+    gate_critical: false
+    writing_order_rank: 0
+    claims: []                  # ids from bible/claims-map.yaml
+    key_moves: []
+    figures_tables:
+      - ref: ""                 # "Figure 2"
+        supports_claim: ""
+    evidence_needed: ""
+    checklist: ""               # Methods: reproducibility; Discussion: Limitations (mandatory)
     target_words: 0
 
-  # ==========================================================================
-  # § gate_critical  —  applies to every shape above
-  # ==========================================================================
-  # Marks a unit as carrying load-bearing content: the claims the rest of the
-  # book rests on, the security or correctness chapter, the highest-traffic
-  # article, the Methods and Results of a paper.
-  #
-  # It drives `pipeline.adversarial_verify: gate_critical` (the shipped default):
-  # after a Critic PASS on a marked unit, three skeptics blind to that verdict
-  # try to refute it before the human sees the packet. With nothing marked, that
-  # mode costs nothing at all — which is a reason to mark honestly, not a reason
-  # to skip the field.
-  #
-  # Mark few. Marking everything is the same as marking nothing, and it turns a
-  # targeted check into a tax on every unit.
+  # § gate_critical (every shape): a unit carrying load-bearing content — the
+  # claims the book rests on, the most-read article, a paper's Methods and
+  # Results. Drives `pipeline.adversarial_verify.mode: gate_critical`. Mark few.

@@ -1,5 +1,177 @@
 # Changelog
 
+## 3.4 — Verdicts that can say no, and stories that are designed first
+
+Written from an integral review of v3.3 (2026-09-25): a full read of the skill, an
+execution audit of every script on technical and literary fixtures (Spanish, raya
+dialogue, 30×5k words, encoding edge cases), and the real-use record of the books
+written with v2 (Qliking, Prompting, Catalina). No project had run v3.x yet, so the
+review's evidence for the gate was the code itself — and the code had the defect class
+the gate exists to prevent.
+
+### The gate could declare a book complete with a critical open
+
+`converged()` never looked at the verdict, `rounds_without_new` counted invocations
+(three `--verdict-only` runs on round 1 printed "CONVERGED — BLOCKED … can reach
+complete"), open findings did not carry over between rounds, and tool failures were
+swallowed — a cp1252 file crashed `lint_render` and the gate reported "MG-5: 0
+critical" with exit 0. All four are fixed and each has a regression test; the old
+selftest (62/62) passed with every one of them present.
+
+The gate is also simpler. Coverage accounting — breadth and depth as separate terms,
+two waivers, two signatures — is replaced by a cumulative `findings.jsonl` (open
+findings live until resolved with `--resolve`), a content-keyed `subjects.json`, and one
+coverage waiver. Verdicts: `ERROR | BLOCKED | NEEDS-REVISION | PASS-PARTIAL | PASS`
+(PASS-SAMPLED is gone). Exit codes: 0 converged, 1 not converged, 2 error.
+`--audited` is now `--subjects`. Fingerprints keep code spans, operators and case, so
+existing claim indexes will report `CHANGED` on passages with inline code — once.
+
+### The gate has a literary branch
+
+It had none: a novel ran concept dossiers built from n-grams (`hasta_que`,
+`dijo_elena`) and stalled in PASS-PARTIAL. For `book-literary`, MG-1/2/3/6 are n/a by
+profile and three checks replace them: **MG-S** story integrity (`check_story.py
+--manuscript`: every arc resolved, the ending delivered in `final_unit`, the ledger
+closed), **MG-T** texture (`lint_fiction.py --book`: cross-chapter tics, unknown or
+near-duplicate names, attribute contradictions, dialogue format), and **MG-C**
+continuity & developmental read. See `references/manuscript-gate-literary.md`.
+
+### Literary: every character has an arc, the story has an ending
+
+Three rules from the author, non-negotiable and enforced by code:
+
+- Every character (protagonist, principal, secondary) has a complete sheet —
+  backstory, personality, contradiction, want, need, voice, and an arc with turning
+  points on named units and a `resolves_in`. Flat arcs are legal and must say what they
+  test. No `TBD`.
+- The story has an ending before drafting (`plot-structure.md` → `ending`).
+- Drafting starts only when `pipeline_step.py ready` passes. A character added
+  mid-book — proposed by anyone, or detected as an unknown proper name in a draft —
+  pauses the unit and runs `references/character-questionnaire.md` again. The Writer
+  never invents a named character.
+
+Baseline before the change (six fresh agents on v3.3): all six would draft with
+characters and ending in `TBD`, citing "Leave TBD where the human isn't ready" and a
+`minor` character-3.
+
+The literary flow moved upstream. Scene cards (want, opposition, pivot, value change,
+crisis, attempts), a Foreshadow–Trigger–Payoff ledger, an echo check on turning points,
+a Reader-POV stress test of the synopsis, and a design rubric are approved with the
+outline. Human seeds and at least one human-written calibration passage are required;
+key scenes are chosen from divergent versions. The Writer drafts scene by scene; the
+Humanizer works by the LAMP categories and its budget is measured, not self-reported;
+Continuity Guardian Mode A now runs before the literary gate, with a facts lane for
+realistic fiction. Removed: literary opening rotation, "exactly one VOICE-RISK",
+"inject controlled imperfection", voice-calibration samples in digests, and the
+"mandatory techniques" that pushed prose toward purple and staccato — they are
+diagnostics with budgets now.
+
+### Counted means counted by a script
+
+Six new scripts: `count_rhet.py` (rhetoric budget, AI-isms, hedges, narration-only
+em-dashes), `check_identifiers.py` (every function or command against an index built
+from the sources — the `GroupConcat()` case), `check_role_diff.py` (the Editor added no
+prose; the Humanizer stayed in budget; the Proofreader's changes go to the human),
+`lint_fiction.py`, `check_story.py`, and `pipeline_step.py` (dispatch brackets
+`check`/`done`, `clean`, `snapshot`, `checks`, `ready`, `apply-edits`). Word lists
+live in `scripts/lexicons/{en,es}.yaml`; a Spanish book is no longer counted with
+English patterns, and a dialogue raya is never an em-dash.
+
+### Pipeline
+
+- Execution model written down: every agent is a subagent; Critic, Reader-POV,
+  skeptics, auditors and CG Mode A are isolated with a closed input list; cold readers
+  read `humanized.clean.md`.
+- Loop semantics: targets are `Writer | Editor | Humanizer | escalate`
+  (`Reader_POV_plus_Humanizer` routed reader findings to the one agent forbidden to fix
+  them); every target reads its worklist; re-entry from the last gated text; a cycle
+  that resolves nothing escalates (plateau rule).
+- The Proofreader runs before human review, so the human approves the text that ships.
+- Runs log moved to `runs.tsv`; per-unit script results in `checks.json`.
+- Adversarial verify: a single-skeptic finding is confirmed by a refutation pass
+  (optionally on a second model) — the three lenses are disjoint by design, so "≥2
+  skeptics agree" almost never fired.
+- Rubric split: `rubric.md` (schema + the verdict computation) plus
+  `rubric-nonfiction.md` or `rubric-literary.md` — each Critic loads one family file.
+
+### Closed after an adversarial pass
+
+An independent agent was told to refute "v3.4 is coherent and operable" and
+found nine behaviours that let the author's rules or the gate be walked around.
+All are closed and each has a regression test:
+
+- A new name that opens a sentence once ("Gustavo no saludó.") went unseen. The
+  language packs now carry `common_words`, `initial_verb_forms` and
+  `noun_suffixes`; a capitalized token that is none of those and never appears
+  in lowercase is a high-confidence name. A flagged token first gets one triage
+  question ("is this a person?") — no → `bible/lexicon.yaml → common_words`, yes
+  → the questionnaire.
+- `world.md` names are mentioned-only: one that speaks, acts in two units or
+  enters a scene card is a character (R4). Scene-card text is scanned too.
+- Story blocks (R1–R4) are never overridable: not by `--human-override`,
+  `approve --force`, a Critic verdict, `--resolve` or a gate waiver. For novels,
+  MG-S cannot be disabled or waived, and convergence re-runs `check_story
+  --manuscript` live.
+- Waivers count only with `waived_by`, `reason`, `debt`; an MG-6 waiver needs a real plan
+  entry; code with a language tag and no declared surface is a major.
+- Role violations cannot be laundered through a loop: `snapshot --reason`
+  records why the loop opened, snapshots `draft`/`edit` too, and a Writer
+  REVISE after a Humanizer or Editor violation starts from the text before it.
+- Freshness: `check` records the dispatch time; `done` rejects stale outputs;
+  the Critic and Proofreader require reports newer than the text they judge.
+- `done editor` / `done proofreader` exit 4 on a contract violation.
+- `done critic` recomputes the verdict from `scorecard.yaml`
+  (`scripts/bookkit/verdict.py`, the one implementation of `rubric.md`) and
+  rejects a header that disagrees.
+- The Technical Reviewer REVISE path is executable as documented.
+- Project schema is now `"3.4"`; anything else is an earlier version (re-scaffold,
+  no migration).
+
+A second verifier then attacked the fixed version and found fourteen more ways
+around; all are closed (47 reproduced attacks fail closed; selftest 511/0):
+
+- R3 holds at every entry to the page: `check writer`, `done writer`, `approve`
+  and `apply-edits` require the full `ready` result, not just the unit's cast.
+- The profile and schema are validated by every script; a misspelled profile no
+  longer switches the literary rules off.
+- Name detection covers italics, ALL CAPS, internal capitals, headings and table
+  cells, speech verbs with intervening words, appositives, and inverted subjects;
+  a `world.md` or location word that speaks or acts is a character. Known limit:
+  a name that is also a common noun and only opens sentences (Luz, Paz) — the
+  Critic's character-3 and Continuity Guardian Mode A are the backstop.
+- Sheets are bound to content: `pipeline_step.py sign <slug> --by …` writes
+  `signed_on` and `signed_hash`; any later edit is `CHAR-UNSIGNED-CHANGE` until
+  re-signed. Broken sheets, invalid roles and duplicate slugs block
+  (`CHAR-DUPLICATE`); extras labels no longer make names "known".
+- Placeholders ("N/A", "x", "completar", "{{…}}", "Lorem ipsum"…) never fill a
+  required field; narrative sheet fields need three words or more.
+- The story ledger must exist and be well-formed (`LEDGER-MISSING`,
+  `LEDGER-INVALID`); a final chapter too thin to carry an ending is
+  `ENDING-NOT-DELIVERED`.
+- `--resolve` needs evidence: deterministic findings are never closed by hand;
+  `fixed` requires the text to have changed; literary findings tagged
+  `rule: R1|R2` close only by a re-audit after a text change. Waivers need real
+  content; in novels MG-4 and MG-C can be neither disabled nor waived;
+  `rounds_without_new_to_close` is at least 2; MG-6 needs runner `evidence`; a
+  truncated findings store is an ERROR; `checks.json` carries the hash of the text
+  it measured.
+- The triage question for a flagged name has three answers: not a person
+  (`common_words`), a public figure never on stage (`non_person_names`), or a
+  person in the story (the questionnaire).
+
+### Also
+
+- Language: `project.language_variant` is canonical (scripts read it; they used to
+  read `conventions.*` and treated a Spanish project as en-US); MG-2 and claim scoring
+  use the language packs, with a language-agnostic fallback.
+- Text layer: UTF-8-sig, NFC, cp1252 reported instead of crashing, CommonMark fences,
+  comments inside code no longer linted (Mermaid `-->` blocked `complete`), scene
+  breaks `* * *` accepted, `1999.`-style accidental lists and dialogue glued to
+  narration flagged, Windows junctions handled.
+- Size: history and measurements moved to `docs/rationale/`; agents load rules only.
+  The files agents load shrank by roughly a third while gaining the literary redesign.
+- Qlik validation surfaces moved to an optional pack, `references/surfaces/qlik.md`.
+
 ## 3.3 — A binary criterion needs a ladder
 
 Written from a review of v3.2. The coverage term landed and was verifiable, but

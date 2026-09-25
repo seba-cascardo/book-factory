@@ -1,47 +1,29 @@
-# Critique Report Template — the Critic's human-facing render
+# Critique report template — the Critic's human-facing render
 
-Used by the Critic in every profile. The **header block is strict**: the
-orchestrator parses it to route loopbacks, so keep the field names and order
-exactly as below. Everything after the header is human-readable.
+Save to `drafts/unit-NN/critique.md`. The **header block is strict**: the
+orchestrator parses `## Verdict:` and `## Loopback target:` to route, so keep
+field names and order exactly. The authority is `drafts/unit-NN/scorecard.yaml`;
+this file renders it and adds Observations.
 
-Save to `drafts/unit-NN/critique.md`. The machine-readable truth lives in
-`drafts/unit-NN/scorecard.yaml` (template `templates/scorecard.yaml`). THIS
-file renders that scorecard for humans and adds Observations — it does NOT
-replace it and carries no independent verdict authority.
-
-The verdict is **computed** from the scorecard per
-`references/rubric.md` § "Verdict computation — AUTHORITATIVE" — the Critic
-does not choose it. The REVISE loopback target is likewise resolved from the
-failing items (shared target → that target; split → highest-severity item's
-target; tied → Writer), never picked by feel.
-
-Valid loopback targets: `Writer | Editor | Humanizer |
-Reader_POV_plus_Humanizer | escalate`. In nonfiction fast mode Reader-POV
-does not run, so `Reader_POV_plus_Humanizer` cannot appear — a reader-confusion
-fail routes to Writer there instead.
-
-Fill every `[bracket]`; delete the guidance comments before saving. The blocks
-below are STRUCTURE only — never paste model prose into a draft from here.
+The verdict and target are computed per `references/rubric.md` — never chosen.
+Valid targets: `Writer | Editor | Humanizer | escalate` (`none` on PASS).
+Fill every `[bracket]`, delete the guidance comments; this is structure only —
+never paste prose from here into a draft.
 
 ---
 
 ```markdown
 # Critique: [unit label per the profile — Chapter NN / Article: title / Section: title]
 
+## Most important problem: [one sentence, with location — written before scoring]
 ## Verdict: [PASS | REVISE | REWORK | ESCALATE]
-<!-- Copied from scorecard.yaml computed_verdict. If it disagrees with the
-     item statuses, the items win — fix the items, do not override here. -->
-
-## Loopback target: [Writer | Editor | Humanizer | Reader_POV_plus_Humanizer | escalate | none]
-## Loopback rationale: [one sentence — the failing item(s) that drove the target; "none" on PASS]
-## Cycle count: [N] of [retry_cap from bible/meta.yaml]
+## Loopback target: [Writer | Editor | Humanizer | escalate | none]
+## Loopback rationale: [the failing row(s) that set the target; "none" on PASS]
+## Cycle count: [N] of [pipeline.retry_cap]
 
 ---
 
 ## Scorecard
-
-<!-- Render scorecard.yaml. The failing-items table is the load-bearing part;
-     the summary counts orient the human. -->
 
 | Severity    | Pass | Fail | N/A |
 |-------------|-----:|-----:|----:|
@@ -49,54 +31,52 @@ below are STRUCTURE only — never paste model prose into a draft from here.
 | significant | [N]  | [N]  | [N] |
 | minor       | [N]  | [N]  | [N] |
 
-**Computed-verdict basis:** [the single rule line from rubric.md that produced
-the verdict — e.g. ">=1 significant fail → REVISE"; on a clean pass: "no fails
-→ PASS"]
+**Verdict basis:** [the rule line from rubric.md that fired, e.g. ">=1 significant fail → REVISE"]
 
-### Failing items
+### Failing rows
 
-<!-- One row per fail, most severe first. If PASS with no fails, write "(none)".
-     For rhet rows, the evidence MUST show the count. -->
+<!-- Most severe first; "(none)" on a clean PASS. Counted rows show the number
+     copied from checks.json. -->
 
-| id        | name                              | severity    | loopback           | evidence (short)        |
-|-----------|-----------------------------------|-------------|--------------------|-------------------------|
-| [rhet-3]  | [Dramatic-danger lexicon quota]   | [significant] | [Humanizer]      | [count=4 (terms, lines)]|
-| [item id] | [what was checked]                | [severity]  | [target]           | [quote / file:line]     |
+| id | name | severity | target | evidence (short) |
+|----|------|----------|--------|------------------|
+| [id] | [what was checked] | [severity] | [target] | [quote / file:line / checks.json count] |
 
-Full scorecard: `drafts/unit-NN/scorecard.yaml`.
+Full scorecard: `drafts/unit-NN/scorecard.yaml` · script counts: `drafts/unit-NN/checks.md`.
 
 ---
 
 ## Observations
 
-<!-- Free-form, NON-rubric signal for the human. Does not affect the verdict.
-     Cross-unit patterns, voice-risk commentary (literary craft-4), a microhit
-     cluster the polish pass should sweep, a forward reference to confirm
-     against the outline, an Axis B / grounding-empty note propagated from
-     tech-review.md so the human sees it at approval time. -->
+<!-- Non-rubric signal; never affects the verdict. Praise only with a quoted
+     line. Include: script counts you believe are wrong (with evidence — the row
+     keeps the script's number), declared-vs-actual opening mismatches, drift to
+     watch next unit. -->
 
 - [observation]
-- [observation]
 
-**Voice-singularity impression:** [one line — reading this unit cold, does it
-read as THIS project's voice (fingerprint traits from voice-profile.md
-present) or as "a competent generic writer in this register"? Name the single
-most singular passage and the single most generic one. This is an impression,
-not a rubric hit; consistency-1 / voice-4 already scored the mechanical part.
-It exists to give the human an early signal before the every-5-unit
-singularity audit runs.]
+**Voice-singularity impression:** [does this read like someone specific, or like
+a competent generic writer of this register?]
+- Most singular: > "[quote]" ([location])
+- Most generic: > "[quote]" ([location])
+<!-- Literary: 3 most singular + 3 most generic, quoted — they go to the human packet. -->
 
 ---
 
-## Specific loopback instructions (if REVISE or REWORK)
+## Unresolved notes for the human
 
-<!-- The exact instruction handed to the looped agent. Address only the failing
-     items; name files/lines; state what "resolved" looks like without writing
-     the replacement prose. On PASS/ESCALATE write "(not applicable)". -->
+- [minor items; skips propagated from tech-review.md (Axis B/C, UNVERIFIED
+  references, empty validation surface); knowledge-graph deltas]
+
+---
+
+## Specific loopback instructions (REVISE / REWORK)
+
+<!-- "(not applicable)" on PASS / ESCALATE. -->
 
 **To [target agent]:**
-- Address [item id]: [the specific change needed and where]
-- Address [item id]: [the specific change needed and where]
-- Leave alone: [any passing item the looped agent should not touch, to prevent
-  collateral regressions]
+1. **First — the most important problem:** [what to change, where, and what
+   "resolved" looks like]
+2. [row id]: [the change and its location]
+- Leave alone: [passing parts the agent must not touch]
 ```

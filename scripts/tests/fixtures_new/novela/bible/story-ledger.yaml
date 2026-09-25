@@ -1,0 +1,17 @@
+entries:
+  - id: F01
+    kind: foreshadow
+    planted_in: unit-01
+    what: "El clic del ventilador cada tres vueltas."
+    trigger: "Mariana cuenta las vueltas en voz alta."
+    payoff_unit: unit-03
+    status: open
+    paid_in: null
+  - id: F02
+    kind: chekhov
+    planted_in: unit-01
+    what: "La radio Spica con la perilla pegada."
+    trigger: "Tomás la prende para escuchar el sorteo."
+    payoff_unit: unit-02
+    status: paid
+    paid_in: unit-02

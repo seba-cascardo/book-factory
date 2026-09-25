@@ -54,7 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bookkit.anchors import Block, blocks_for, norm  # noqa: E402
-from bookkit.project import Project, add_common_args, load_project  # noqa: E402
+from bookkit.project import Project, add_common_args, as_list, load_project  # noqa: E402
 
 SEVERITIES = ["critical", "major", "minor"]
 DEFAULT_SEVERITY = "critical"
@@ -119,9 +119,11 @@ def scan(project: Project, entries: list[dict]) -> tuple[list[Regression], list[
         severity = str(entry.get("severity_if_back") or DEFAULT_SEVERITY)
         if severity not in SEVERITIES:
             severity = DEFAULT_SEVERITY
-        scope = {str(s) for s in (entry.get("scope") or [])}
-        allow = [str(a.get("anchor") or "") for a in (entry.get("allow_in") or [])]
-        rules = [(r, _compile(r)) for r in (entry.get("forbid") or [])]
+        # as_list: `scope: ch-11` is one unit, not five letters.
+        scope = {str(s) for s in as_list(entry.get("scope"))}
+        allow = [str(a.get("anchor") or "") if isinstance(a, dict) else str(a)
+                 for a in as_list(entry.get("allow_in"))]
+        rules = [(r, _compile(r)) for r in as_list(entry.get("forbid")) if isinstance(r, dict)]
 
         for rel, (stem, blocks) in sorted(index.items()):
             # Empty scope = the whole book. A defect fixed in two chapters can
@@ -147,7 +149,7 @@ def scan(project: Project, entries: list[dict]) -> tuple[list[Regression], list[
                         pattern=str(raw.get("pattern")),
                         quote=block.text, what=str(entry.get("what") or ""),
                         fixed_on=str(entry.get("fixed_on") or ""),
-                        detected_by=[str(d) for d in (entry.get("detected_by") or [])],
+                        detected_by=[str(d) for d in as_list(entry.get("detected_by"))],
                     ))
     return findings, exemptions
 
@@ -167,10 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     project = load_project(args.root, args.units)
     reg_path = project.root / args.registry
     doc = project.load_yaml(args.registry)
-    entries = doc.get("defects") if isinstance(doc, dict) else None
-    if entries is None and isinstance(doc, list):
-        entries = doc
-    entries = [e for e in (entries or []) if isinstance(e, dict)]
+    entries = [e for e in as_list(doc.get("defects")) if isinstance(e, dict)]
 
     if not reg_path.exists():
         if not args.quiet:
@@ -220,7 +219,7 @@ def _write(path: str | None, findings: list[Regression], exemptions: list[dict],
         "counts": {s: sum(1 for f in findings if f.severity == s) for s in SEVERITIES},
         "findings": [asdict(f) for f in findings],
         "exemptions": exemptions,
-    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    }, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
 
 
 if __name__ == "__main__":

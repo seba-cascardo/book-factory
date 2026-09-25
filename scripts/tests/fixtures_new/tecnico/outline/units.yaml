@@ -1,0 +1,5 @@
+units:
+  - unit: 01
+    title: "Aggregating strings"
+    purpose: "The reader can build a comma-separated list per region."
+    target_words: 400

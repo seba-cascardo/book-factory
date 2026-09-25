@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""build_concept_dossier.py — concept-centric dossiers, and the claim index.
-
-## Why the unit of analysis has to be the concept
+"""build_concept_dossier.py — concept-centric dossiers (MG-1), and the claim index.
 
 Every per-unit review is structurally unable to find a cross-unit contradiction:
-each reviewer sees one side of it and approves that side, correctly. This script
-inverts the unit. For one concept it gathers EVERY prose passage across the whole
-book that makes a claim about it, into one file, so a single auditor reads them
-together and can notice that unit 8 and unit 18 disagree.
+each reviewer sees one side and approves it. This script inverts the unit — for
+one concept it gathers EVERY prose passage across the book that makes a claim
+about it, so one auditor reads them together. Source of truth is `final/`.
 
-Source of truth is `final/`, never `manuscript.md` — the manuscript is derived.
+The window is the logical PARAGRAPH (`bookkit.segment.paragraphs`); code is
+referenced, never inlined; inline code spans are prose.
 
-## Three measured facts behind the design
-
-  - The natural window is the PARAGRAPH, not a line and not ±N lines. Physical
-    lines are merged back into paragraphs first (`bookkit.segment.paragraphs`) —
-    a claim is a proposition and a proposition does not stop at column 80.
-  - Code lives strictly inside fences, so a fence toggle beats a markdown parser.
-  - Inline code spans are PROSE. Half the claims in a technical book live in a
-    sentence that mentions a keyword in backticks. Only fenced blocks are cut.
-
-## Modes
-
+Modes
   --probe-report      per-concept coverage table (use this to tune probes)
   --concept <id>      emit one dossier
   --all               emit every dossier plus an index
@@ -51,29 +39,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bookkit.coverage import (  # noqa: E402
     CoverageRecord, Subject, add_coverage_args, composite_fingerprint,
-    load_ledger, partition,
+    load_manifest, partition,
 )
 from bookkit.gitblame import blame_map, in_fix_run, is_repo  # noqa: E402
-from bookkit.project import Project, add_common_args, load_project  # noqa: E402
-from bookkit.selection import stratified_top  # noqa: E402
-from bookkit.segment import (  # noqa: E402
-    Record, fence_after, paragraphs, prev_prose, segment,
+from bookkit.lexicon import compile_any, load as load_lexicon  # noqa: E402
+from bookkit.project import (  # noqa: E402
+    Project, add_common_args, as_list, load_project, natural_key,
 )
+from bookkit.selection import stratified_top  # noqa: E402
+from bookkit.segment import Record, fence_after, paragraphs, prev_prose, segment  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
 from bookkit.textmetrics import (  # noqa: E402
-    RELATED_THRESHOLD, RELATED_TOP_K, content_terms, fingerprint, jaccard,
-    stopwords_for,
+    RELATED_THRESHOLD, RELATED_TOP_K, content_terms, fingerprint, jaccard, stopwords_for,
 )
 
 ROLES = ["CANON", "repeats", "derives", "qualifies", "summary", "example", "crossref"]
 
 # ---------------------------------------------------------------------------
-# Claim scoring — it ORDERS, it does not filter.
+# Claim scoring — it ORDERS, it does not filter. The passage discarded for being
+# "not very claim-like" is the one that turns out to be canonical. The score
+# decides ordering and what is trimmed from the home unit (~80% of hits, where
+# the book contradicts itself LEAST).
 # ---------------------------------------------------------------------------
-# Filtering is tempting and wrong: the passage discarded for being "not very
-# claim-like" is exactly the one that turns out to be canonical. Everything is
-# emitted; the score only decides ordering and what gets trimmed from the home
-# unit — which contributes ~80% of hits and is where the book contradicts itself
-# LEAST.
 
 RX_COPULA = re.compile(r"\b(is|are|means|refers to|is not|are not)\b", re.I)
 RX_BEHAVIOR = re.compile(
@@ -90,15 +77,55 @@ RX_COND = re.compile(r"\b(if you|when you|unless|otherwise|as soon as|the instan
 RX_CROSSREF = re.compile(
     r"(see Chapter|see §|in the next chapter|Chapter \d+ (covers|picks up|will)|"
     r"^Exercise \d|we'll come back|comes back in Chapter)", re.I)
-RX_ANAPHORA = re.compile(r"^(This|That|It|These|Those|But|And|So|Which|Either|Both)\b")
-# Rhetorical absolutes of a workshop register: "ship it", "do this, always".
-# An imperative carrying an absolute is voice, not an engine claim.
+RX_ANAPHORA = re.compile(
+    r"^(This|That|It|These|Those|But|And|So|Which|Either|Both|"
+    r"Esto|Eso|Esta|Este|Estos|Estas|Pero|Y|Así|Ambos|Ambas)\b")
+# An imperative carrying an absolute is voice ("Always ship it"), not a claim.
 RX_IMPERATIVE = re.compile(r"^(Do|Don't|Never|Always|Use|Keep|Treat|Put|Make|Avoid|Ship)\b")
 RX_HEDGE = re.compile(
     r"\b(but|not a guarantee|unless|except|typically|roughly|usually|"
     r"in practice|tends to|often|generally|approximately|about)\b", re.I)
+RX_SUMMARY = re.compile(r"\b(Summary|Recap|Resumen|Recapitulaci[oó]n)\b", re.I)
+RX_EXERCISE = re.compile(r"\b(Exercises?|Practice|Ejercicios?|Pr[aá]ctica)\b", re.I)
 
 CLAIM_SCORE_THRESHOLD = 5
+
+
+class Scorer:
+    """Claim-scoring vocabulary for the book's language.
+
+    English keeps the calibrated regexes above. Any other language scores with
+    its pack (`modality` ∪ `universal` for absolutes, `breaks` for behavior,
+    optional `copula` and `hedges`/`weasels`): the English lists on a Spanish book
+    scored nothing, and "0 concepts" read as a clean book. With no pack only the
+    language-neutral signal (quantities) scores, and the coverage record says so.
+    """
+
+    def __init__(self, language: str, lex: dict):
+        self.english = language == "en"
+        self.pack = lex.get("_language") if lex.get("_language") == lex.get("_requested") else None
+        if self.english:
+            self.copula, self.behavior, self.modal = RX_COPULA, RX_BEHAVIOR, RX_MODAL
+            self.cond, self.crossref, self.imperative = RX_COND, RX_CROSSREF, RX_IMPERATIVE
+            self.hedge = RX_HEDGE
+            return
+        pack = lex if self.pack else {}
+        self.copula = compile_any(pack.get("copula") or [], regex=True)
+        self.behavior = compile_any(pack.get("breaks") or [], regex=True)
+        self.modal = compile_any((pack.get("modality") or []) + (pack.get("universal") or []),
+                                 regex=True)
+        self.hedge = compile_any(pack.get("hedges") or pack.get("weasels") or [])
+        self.cond = self.crossref = self.imperative = None
+
+    @staticmethod
+    def hit(rx, text: str) -> bool:
+        return bool(rx and rx.search(text))
+
+    def imperative_start(self, text: str) -> bool:
+        return bool(self.imperative and self.imperative.match(text.strip()))
+
+
+ENGLISH = Scorer("en", {})
 
 
 @dataclass
@@ -114,15 +141,14 @@ class AuditConfig:
     def persona_re(self) -> re.Pattern | None:
         if not self.persona_names:
             return None
-        return re.compile(r"\b(" + "|".join(
-            re.escape(n) for n in self.persona_names) + r")\b")
+        return re.compile(r"\b(" + "|".join(re.escape(n) for n in self.persona_names) + r")\b")
 
 
 def load_audit_config(project: Project) -> AuditConfig:
     raw = project.load_yaml("bible/audit-config.yaml")
     return AuditConfig(
-        fix_run_commits={str(c) for c in (raw.get("fix_run_commits") or [])},
-        persona_names=[str(n) for n in (raw.get("persona_names") or [])],
+        fix_run_commits={str(c) for c in as_list(raw.get("fix_run_commits"))},
+        persona_names=[str(n) for n in as_list(raw.get("persona_names"))],
         home_cap=int(raw.get("home_cap", 12)),
         related_threshold=float(raw.get("related_threshold", RELATED_THRESHOLD)),
         related_top_k=int(raw.get("related_top_k", RELATED_TOP_K)),
@@ -130,33 +156,27 @@ def load_audit_config(project: Project) -> AuditConfig:
     )
 
 
-def score_claim(text: str, term_rx: re.Pattern, cfg: AuditConfig) -> int:
+def score_claim(text: str, term_rx: re.Pattern, cfg: AuditConfig,
+                sc: Scorer = ENGLISH) -> int:
     s = 0
-    if RX_COPULA.search(text):
+    if sc.hit(sc.copula, text):
         s += 3
-    if RX_BEHAVIOR.search(text):
+    if sc.hit(sc.behavior, text):
         s += 3
-    if RX_MODAL.search(text) and not RX_IMPERATIVE.match(text.strip()):
+    if sc.hit(sc.modal, text) and not sc.imperative_start(text):
         s += 3
     if RX_QUANT.search(text):
         s += 2
-    if RX_COND.search(text):
+    if sc.hit(sc.cond, text):
         s += 2
-    if RX_CROSSREF.search(text):
+    if sc.hit(sc.crossref, text):
         s -= 4
-    # The running-example-persona penalty applies to PURE NARRATION only.
-    #
-    # MEASURED: without the copula/behavior guard this rule trimmed the canonical
-    # passage of a cross-unit contradiction, because that passage opened with the
-    # example character's name. A didactic book teaches its rules THROUGH the
-    # running example, so penalizing a mention of the persona penalizes exactly
-    # the claims that matter most. The regression gate caught it: without this
-    # guard, the contradiction became undetectable, because only the wrong side
-    # of it survived the trim.
+    # The running-example persona penalty applies to PURE NARRATION only: a
+    # didactic book teaches its rules THROUGH the example, and an unguarded
+    # penalty trimmed the canonical side of a real contradiction.
     prx = cfg.persona_re
     if (prx and prx.search(text)
-            and not RX_BEHAVIOR.search(text)
-            and not RX_COPULA.search(text)):
+            and not sc.hit(sc.behavior, text) and not sc.hit(sc.copula, text)):
         s -= 3
     if _bare_mention(text, term_rx):
         s -= 2
@@ -169,8 +189,8 @@ def _bare_mention(text: str, term_rx: re.Pattern) -> bool:
     return bool(term_rx.search(text)) and not bool(term_rx.search(stripped))
 
 
-def has_absolute(text: str) -> bool:
-    return bool(RX_MODAL.search(text)) and not RX_IMPERATIVE.match(text.strip())
+def has_absolute(text: str, sc: Scorer = ENGLISH) -> bool:
+    return sc.hit(sc.modal, text) and not sc.imperative_start(text)
 
 
 # ---------------------------------------------------------------------------
@@ -205,93 +225,72 @@ class Passage:
         return fingerprint(self.text)
 
 
+def _unit_order(records_by_unit: dict) -> dict[str, int]:
+    return {u: i for i, u in enumerate(records_by_unit)}
+
+
 def build_passages(records_by_unit: dict[str, tuple[str, list[Record]]],
-                   probe: dict, cfg: AuditConfig, project: Project) -> list[Passage]:
-    # Case sensitivity matters. In many technical domains the keywords are also
-    # ordinary English words (`SET`, `KEEP`, `JOIN`, `LOAD`). Without the flag a
-    # probe for one of them returns triple-digit junk hits and the dossier is
-    # unreadable.
+                   probe: dict, cfg: AuditConfig, project: Project,
+                   sc: Scorer = ENGLISH) -> list[Passage]:
+    # Case sensitivity matters for keywords that are also ordinary words
+    # (`SET`, `KEEP`, `JOIN`): without it a probe returns triple-digit junk.
     flags = 0 if probe.get("case_sensitive") else re.I
     inc = re.compile(probe["include"], flags)
     exc = re.compile(probe["exclude"], flags) if probe.get("exclude") else None
     out: list[Passage] = []
 
-    for unit, (relpath, recs) in sorted(records_by_unit.items()):
+    for unit, (relpath, recs) in records_by_unit.items():   # reading order
         by_line = {r.line: r for r in recs}
         blame = blame_map(project.root, relpath, cfg.use_blame)
-
         for r in recs:
             if r.kind in ("code", "blank", "hr", "heading"):
                 continue
-            if not inc.search(r.text):
+            if not inc.search(r.text) or (exc and exc.search(r.text)):
                 continue
-            if exc and exc.search(r.text):
-                continue
-
             p = Passage(unit=unit, path=relpath, line=r.line, kind=r.kind,
                         heading_path=r.heading_path, text=r.text)
-            p.score = score_claim(r.text, inc, cfg)
-            p.absolute = has_absolute(r.text)
-            p.hedged = bool(RX_HEDGE.search(r.text))
+            p.score = score_claim(r.text, inc, cfg, sc)
+            p.absolute = has_absolute(r.text, sc)
+            p.hedged = Scorer.hit(sc.hedge, r.text)
             p.numbers = [m.group(0) for m in RX_QUANT.finditer(r.text)]
-
-            # Window: the whole paragraph. One exception — a leading anaphora
-            # with no subject needs the sentence it refers back to, or the
-            # auditor reads "It returns zero rows" with no idea what "it" is.
+            # A leading anaphora needs the sentence it refers back to.
             if RX_ANAPHORA.match(r.text.strip()):
                 prev = prev_prose(by_line, r.line)
                 if prev:
                     p.context = prev.text
-
-            # A bullet under `## Summary` can be the second side of a pair, never
-            # the first: a summary restates, it does not establish.
-            if r.kind == "bullet" and "Summary" in r.heading_path:
+            # A summary bullet can be the second side of a pair, never the first.
+            if r.kind == "bullet" and RX_SUMMARY.search(r.heading_path):
                 p.role = "summary"
-            elif re.search(r"\b(Exercise|Exercises|Practice)\b", r.heading_path):
+            elif RX_EXERCISE.search(r.heading_path):
                 p.role = "exercise"
-
-            # Code by reference, never by value. A technical book carries
-            # thousands of lines of it and inlining turns dossiers into dumps.
             p.code_ref = fence_after(by_line, r.line, relpath)
-
             bm = blame.get(r.line)
             if bm:
                 p.blame_commit, p.blame_date = bm
                 p.in_fix_run = in_fix_run(p.blame_commit, cfg.fix_run_commits)
-
             out.append(p)
-
     return out
 
 
 def mark_related(passages: list[Passage], cfg: AuditConfig,
                  stopwords: set[str]) -> list[tuple[float, Passage, Passage]]:
-    """Similarity graph over passages. Returns PAIRS, not connected components.
-
-    With a threshold this low the transitive closure collapses a whole unit into
-    one 30-passage "cluster", which tells the auditor nothing. A pair does:
-    "these two make the same claim, and one was touched in a fix run and the
-    other was not" is directly actionable.
-    """
+    """Similarity graph over passages. Returns PAIRS, not connected components:
+    at a threshold this low the transitive closure collapses a chapter into one
+    30-passage cluster, which tells an auditor nothing."""
     terms = [content_terms(p.text, stopwords) for p in passages]
     n = len(passages)
     neighbours: dict[int, list[tuple[float, int]]] = {i: [] for i in range(n)}
-
     for i in range(n):
         for j in range(i + 1, n):
             s = jaccard(terms[i], terms[j])
             if s >= cfg.related_threshold:
                 neighbours[i].append((s, j))
                 neighbours[j].append((s, i))
-
     pairs: list[tuple[float, Passage, Passage]] = []
     for i in range(n):
         top = sorted(neighbours[i], reverse=True)[:cfg.related_top_k]
         passages[i].near_dup_of = [f"{passages[j].loc} ({s:.2f})" for s, j in top]
-        for s, j in neighbours[i]:
-            if i < j:
-                pairs.append((s, passages[i], passages[j]))
-
+        pairs += [(s, passages[i], passages[j]) for s, j in neighbours[i] if i < j]
     pairs.sort(key=lambda t: -t[0])
     return pairs
 
@@ -302,17 +301,8 @@ def mark_related(passages: list[Passage], cfg: AuditConfig,
 
 
 def home_cap_for(probe: dict, cfg: AuditConfig) -> int:
-    """Per-concept override of the home-unit cap.
-
-    The trim is the depth axis of MG-1 coverage: a trimmed dossier is a SAMPLE of
-    its concept and may not be reported clean. That has to be closable by work,
-    not only by a global dial — otherwise a single sprawling concept keeps the
-    whole gate off `PASS` forever, which is a criterion nobody can satisfy.
-
-    So `home_cap` is settable per probe in `bible/concept-probes-tuned.yaml`.
-    Raising it is a budget decision about one concept, stated where the rest of
-    that concept's tuning already lives.
-    """
+    """Per-concept override of the home-unit cap (`home_cap` on the probe in
+    bible/concept-probes-tuned.yaml): the ladder out of a sampled dossier."""
     raw = probe.get("home_cap")
     try:
         return max(1, int(raw)) if raw is not None else cfg.home_cap
@@ -322,67 +312,48 @@ def home_cap_for(probe: dict, cfg: AuditConfig) -> int:
 
 def trim_home(passages: list[Passage], home: str,
               cfg: AuditConfig, cap: int | None = None) -> tuple[list[Passage], int]:
-    """Home-unit cap. Every other unit is uncapped.
+    """Home-unit cap; other units are uncapped.
 
-    INVARIANT, learned from the regression gate: a home-unit passage that is
-    cross-linked to a passage in ANOTHER unit is NEVER trimmed, whatever its
-    score. It is precisely the passage that can contradict — or vindicate — the
-    other unit, and therefore the whole reason the dossier exists. Trimming it by
-    score leaves the auditor looking at one side only.
-
-    The count it returns is the DEPTH axis of coverage: a dossier that trimmed
-    passages is a sample of its concept, and a sampled subject may not be
-    reported clean. Raising `home_cap` in `bible/audit-config.yaml` is how a
-    project buys the depth back.
+    INVARIANT: a home-unit passage cross-linked to another unit is NEVER trimmed —
+    it is the passage that can contradict the other unit, the reason the dossier
+    exists. The count returned is the depth axis: a trimmed dossier is a sample.
     """
-    cross_linked = {
-        p.line for p in passages
-        if p.unit == home and any(
-            not ref.startswith(f"{p.path}:") for ref in p.near_dup_of)
-    }
-    home_ps = sorted([p for p in passages if p.unit == home],
-                     key=lambda p: (-p.score, p.line))
+    cross_linked = {p.line for p in passages if p.unit == home and any(
+        not ref.startswith(f"{p.path}:") for ref in p.near_dup_of)}
+    home_ps = sorted([p for p in passages if p.unit == home], key=lambda p: (-p.score, p.line))
     kept_home = {p.line for p in home_ps[:(cap or cfg.home_cap)]} | cross_linked
     kept = [p for p in passages if p.unit != home or p.line in kept_home]
     return kept, len(passages) - len(kept)
 
 
 def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
-                 pairs: list[tuple[float, Passage, Passage]], cfg: AuditConfig) -> str:
+                 pairs: list[tuple[float, Passage, Passage]], cfg: AuditConfig,
+                 order: dict[str, int]) -> str:
     home = probe.get("home") or node.get("introduced_in") or ""
-
-    kg_span = [c for c in sorted(
-        ({node.get("introduced_in", "")}
-         | set(node.get("reinforced_in") or [])
-         | set(node.get("hinted_in") or [])) - {""}) if c]
-    text_span = sorted({p.unit for p in passages})
-
+    kg_span = sorted({node.get("introduced_in", "")} | set(as_list(node.get("reinforced_in")))
+                     | set(as_list(node.get("hinted_in"))) - {""}, key=natural_key)
+    kg_span = [c for c in kg_span if c]
+    text_span = sorted({p.unit for p in passages}, key=lambda u: order.get(u, 0))
     kept, dropped = trim_home(passages, home, cfg, home_cap_for(probe, cfg))
 
-    # D2 = a related pair where ONE side was touched in a fix run and the other
-    # was not. That is the mechanical signature of "the fix landed in 1 of N
-    # sites" — detected without spending a token on an LLM.
+    # D2: a related pair whose sides have divergent blame — one touched in a fix
+    # run, the other not. The mechanical signature of a fix in 1 of N sites.
     d2 = [f"{a.loc} [{a.blame_commit or '—'}{' FIX' if a.in_fix_run else ''}] "
           f"<-> {b.loc} [{b.blame_commit or '—'}{' FIX' if b.in_fix_run else ''}]"
           for _s, a, b in pairs if a.in_fix_run != b.in_fix_run][:15]
 
-    L: list[str] = ["---",
-                    f"concept: {cid}",
+    L: list[str] = ["---", f"concept: {cid}",
                     f"name: {node.get('name', probe.get('name', cid))!r}",
-                    f"kind: {node.get('kind', 'unknown')}",
-                    f"home: {home}",
-                    f"kg_span: [{', '.join(kg_span)}]",
-                    f"text_span: [{', '.join(text_span)}]"]
+                    f"kind: {node.get('kind', 'unknown')}", f"home: {home}",
+                    f"kg_span: [{', '.join(kg_span)}]", f"text_span: [{', '.join(text_span)}]"]
     only_text = [c for c in text_span if c not in kg_span]
     only_kg = [c for c in kg_span if c not in text_span]
-    L.append(f"kg_drift: {{text_only: [{', '.join(only_text)}], "
-             f"kg_only: [{', '.join(only_kg)}]}}")
+    L.append(f"kg_drift: {{text_only: [{', '.join(only_text)}], kg_only: [{', '.join(only_kg)}]}}")
     L.append(f"passages_total: {len(passages)}  # {dropped} trimmed from the home unit")
     L.append(f"complete: {'false' if dropped else 'true'}")
     if dropped:
-        L.append(f"# {dropped} home-unit passage(s) were trimmed — this dossier is a "
-                 f"SAMPLE of the concept. Set sampled:true in your findings and do not "
-                 f"report the concept clean. To see all of it, set `home_cap: "
+        L.append(f"# {dropped} home-unit passage(s) trimmed — this dossier is a SAMPLE. Set "
+                 f"sampled:true in your findings. To see all of it, set `home_cap: "
                  f"{len([p for p in passages if p.unit == home])}` on this probe in "
                  f"bible/concept-probes-tuned.yaml.")
     if d2:
@@ -390,16 +361,10 @@ def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
         L += [f"  - {s}" for s in d2]
     L += ["---", "", "## Passages", ""]
 
-    for p in sorted(kept, key=lambda p: (p.unit, p.line)):
-        flags = []
-        if p.score >= CLAIM_SCORE_THRESHOLD:
-            flags.append("claim")
-        if p.role != "body":
-            flags.append(p.role)
-        if p.absolute:
-            flags.append("ABSOLUTE")
-        if p.hedged:
-            flags.append("hedged")
+    for p in sorted(kept, key=lambda p: (order.get(p.unit, 0), p.line)):
+        flags = (["claim"] if p.score >= CLAIM_SCORE_THRESHOLD else []) + (
+            [p.role] if p.role != "body" else []) + (["ABSOLUTE"] if p.absolute else []) + (
+            ["hedged"] if p.hedged else [])
         blame = f"{p.blame_commit} {p.blame_date}".strip() if p.blame_commit else "—"
         if p.in_fix_run:
             blame += " FIX-RUN"
@@ -416,32 +381,28 @@ def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
         if p.near_dup_of or p.code_ref:
             L.append("")
 
-    # Homonym watch — SEPARATE from Passages on purpose. Merged in, the auditor
-    # reads two different referents as one claim and emits a false contradiction.
-    # That is the predicted false positive number one.
+    # Homonym watch — SEPARATE on purpose: merged in, two referents read as one
+    # claim and the auditor reports a false contradiction.
     if probe.get("homonym_guard"):
         L += ["## Homonym watch", "", f"Guard: `{probe['homonym_guard']}`", ""]
         hg = re.compile(probe["homonym_guard"], re.I)
         hits = [p for p in passages if hg.search(p.text)]
         L += ([f"- {p.loc} — {p.text[:200]}"
-               for p in sorted(hits, key=lambda p: (p.unit, p.line))]
+               for p in sorted(hits, key=lambda p: (order.get(p.unit, 0), p.line))]
               or ["_No guard hits._"])
         L.append("")
 
     nums = [p for p in passages if p.numbers]
     if nums:
         L += ["## Numbers table", "",
-              "| Site | Quantity | Declared baseline (for the auditor to fill) |",
-              "|---|---|---|"]
+              "| Site | Quantity | Declared baseline (for the auditor to fill) |", "|---|---|---|"]
         L += [f"| {p.loc} | {', '.join(p.numbers)} | |"
-              for p in sorted(nums, key=lambda p: (p.unit, p.line))]
+              for p in sorted(nums, key=lambda p: (order.get(p.unit, 0), p.line))]
         L.append("")
 
     if node:
         L += ["## Knowledge-graph record", "", "```yaml",
-              yaml.safe_dump(node, allow_unicode=True, sort_keys=False).strip(),
-              "```", ""]
-
+              yaml.safe_dump(node, allow_unicode=True, sort_keys=False).strip(), "```", ""]
     return "\n".join(L)
 
 
@@ -450,100 +411,76 @@ def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
 # ---------------------------------------------------------------------------
 
 
-def emit_index(project: Project, records_by_unit, kg, probes,
-               cfg: AuditConfig, stopwords: set[str], out_path: Path) -> int:
-    """Generate bible/claim-index.yaml.
+def emit_index(project: Project, records_by_unit, kg, probes, cfg: AuditConfig,
+               stopwords: set[str], out_path: Path, sc: Scorer = ENGLISH) -> int:
+    """Generate bible/claim-index.yaml, keyed by FINGERPRINT, not line number.
 
-    It stores a FINGERPRINT per passage, not a line number. If a passage MOVES
-    the validator re-finds it and repairs the line; if a passage was EDITED the
-    fingerprint disappears and the validator flags every sibling as suspect.
-    That is the incomplete-fix detector, and the reason this does not go stale
-    the way a hand-ticked checklist does.
-
-    Roles are assigned by the audit, not by this script: everything ships as
-    `repeats` except the strongest claim in the home unit, which starts as a
-    provisional CANON. A human decision, once made, is never overwritten.
+    Roles are seeded here and decided by the audit; a human decision (role,
+    `verified_against`, `do_not_touch`, `note`) is never overwritten — and a
+    concept that has no claim-scored passage in this run keeps its entry and its
+    human metadata instead of vanishing from the file.
     """
     concepts: dict[str, dict] = {}
-
     prior: dict[str, dict[str, str]] = {}
     prior_meta: dict[str, dict] = {}
     if out_path.exists():
-        old = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
+        old = yaml.safe_load(read_text(out_path)) or {}
         for cid, entry in (old.get("concepts") or {}).items():
+            entry = entry or {}
             prior[cid] = {s["fingerprint"]: s.get("role", "repeats")
-                          for s in entry.get("sites", []) if s.get("fingerprint")}
-            prior_meta[cid] = {
-                "verified_against": entry.get("verified_against"),
-                "do_not_touch": entry.get("do_not_touch", False),
-                "note": entry.get("note"),
-            }
+                          for s in as_list(entry.get("sites")) if s.get("fingerprint")}
+            prior_meta[cid] = {"verified_against": entry.get("verified_against"),
+                               "do_not_touch": entry.get("do_not_touch", False),
+                               "note": entry.get("note"), "name": entry.get("name"),
+                               "home": entry.get("home")}
 
+    order = _unit_order(records_by_unit)
     for cid, probe in probes.items():
-        ps = build_passages(records_by_unit, probe, cfg, project)
+        ps = build_passages(records_by_unit, probe, cfg, project, sc)
         mark_related(ps, cfg, stopwords)
         claims = [p for p in ps if p.score >= CLAIM_SCORE_THRESHOLD]
-        if not claims:
-            continue
-
         node = kg.get(cid, {})
         home = probe.get("home") or node.get("introduced_in") or ""
+        meta = prior_meta.get(cid, {})
+        if not claims:
+            if meta.get("verified_against") or meta.get("do_not_touch") or meta.get("note"):
+                concepts[cid] = {"name": meta.get("name") or node.get("name", cid),
+                                 "home": meta.get("home") or home,
+                                 "verified_against": meta.get("verified_against"),
+                                 "do_not_touch": meta.get("do_not_touch", False),
+                                 "note": meta.get("note"), "sites": []}
+            continue
         home_claims = [p for p in claims if p.unit == home]
-        best = (max(home_claims, key=lambda p: p.score) if home_claims
-                else max(claims, key=lambda p: p.score))
-
-        # `related` is what makes PROPAGATE usable. Without it, editing one
-        # passage sends you to review all 65 sites of the concept — and a warning
-        # that asks for that gets ignored, which is exactly how the checklist
-        # this replaces went stale. With it, you review the 3 or 4 that carry the
-        # same sub-claim.
+        best = max(home_claims or claims, key=lambda p: p.score)
         terms = {p.loc: content_terms(p.text, stopwords) for p in claims}
-
         sites = []
-        for p in sorted(claims, key=lambda p: (p.unit, p.line)):
-            role = prior.get(cid, {}).get(p.fp)
-            if role is None:
-                role = ("CANON" if p is best else
-                        "summary" if p.role == "summary" else
-                        "example" if p.role == "exercise" else "repeats")
+        for p in sorted(claims, key=lambda p: (order.get(p.unit, 0), p.line)):
+            role = prior.get(cid, {}).get(p.fp) or (
+                "CANON" if p is best else "summary" if p.role == "summary"
+                else "example" if p.role == "exercise" else "repeats")
             rel = sorted(((jaccard(terms[p.loc], terms[q.loc]), q.loc)
                           for q in claims if q.loc != p.loc), reverse=True)
             sites.append({
-                "location": p.loc,
-                "role": role,
-                "fingerprint": p.fp,
+                "location": p.loc, "role": role, "fingerprint": p.fp,
                 "claim": p.text[:110].rstrip() + ("…" if len(p.text) > 110 else ""),
                 "blame": f"{p.blame_commit} {p.blame_date}".strip() or "—",
-                "related": [loc for s, loc in rel
-                            if s >= cfg.related_threshold][:cfg.related_top_k],
+                # `related` bounds PROPAGATE to the 3–4 sites carrying the same
+                # sub-claim; "review all 65 sites" gets ignored.
+                "related": [loc for s, loc in rel if s >= cfg.related_threshold][:cfg.related_top_k],
             })
+        concepts[cid] = {"name": node.get("name", probe.get("name", cid)), "home": home,
+                         "verified_against": meta.get("verified_against"),
+                         "do_not_touch": meta.get("do_not_touch", False),
+                         "note": meta.get("note"), "sites": sites}
 
-        meta = prior_meta.get(cid, {})
-        concepts[cid] = {
-            "name": node.get("name", probe.get("name", cid)),
-            "home": home,
-            # Positive verdicts are first-class. `verified_against` closes a
-            # concept against a source; `do_not_touch` is the auto-refutation
-            # anchor that stops a later pass from "fixing" correct text.
-            "verified_against": meta.get("verified_against"),
-            "do_not_touch": meta.get("do_not_touch", False),
-            "note": meta.get("note"),
-            "sites": sites,
-        }
-
-    doc = {
-        "# generated by": "scripts/build_concept_dossier.py --emit-index — do not hand-edit sites",
-        "# hand-editable": "role, verified_against, do_not_touch, note — these are preserved",
-        "# roles": " | ".join(ROLES),
-        "# validate": "python scripts/validate_claim_index.py",
-        "schema_version": "1.0",
-        "concepts": concepts,
-    }
+    doc = {"# generated by": "scripts/build_concept_dossier.py --emit-index — do not hand-edit sites",
+           "# hand-editable": "role, verified_against, do_not_touch, note — these are preserved",
+           "# roles": " | ".join(ROLES),
+           "# validate": "python scripts/validate_claim_index.py",
+           "schema_version": "1.0", "concepts": concepts}
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=200),
-        encoding="utf-8")
-
+    out_path.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=200),
+                        encoding="utf-8")
     n_sites = sum(len(c["sites"]) for c in concepts.values())
     n_prior = sum(len(v) for v in prior.values())
     print(f"[claim-index] {len(concepts)} concept(s), {n_sites} site(s) "
@@ -557,38 +494,29 @@ def emit_index(project: Project, records_by_unit, kg, probes,
 
 
 def load_kg(project: Project) -> dict[str, dict]:
-    """Knowledge graph by id. Empty when the project has none (standalone)."""
     d = project.load_yaml("bible/knowledge-graph.yaml")
-    return {c["id"]: c for c in (d.get("concepts") or []) if c.get("id")}
+    return {c["id"]: c for c in as_list(d.get("concepts")) if isinstance(c, dict) and c.get("id")}
 
 
 def load_probes(project: Project) -> dict[str, dict]:
-    """Generated base plus hand-written overrides.
-
-    Tuned probes WIN and may introduce ids with no knowledge-graph node: the
-    concept that actually contradicts itself is usually finer-grained than a
-    graph node. A defect can live in one sense of a term while the node covering
-    it looks perfectly consistent.
-    """
+    """Generated base plus hand-written overrides; tuned probes WIN and may name
+    concepts finer-grained than any knowledge-graph node."""
     base = project.load_yaml("bible/concept-probes.yaml")
-    probes = {p["id"]: p for p in (base.get("probes") or []) if p.get("id")}
-
+    probes = {p["id"]: p for p in as_list(base.get("probes")) if isinstance(p, dict) and p.get("id")}
     tuned = project.load_yaml("bible/concept-probes-tuned.yaml")
-    for p in tuned.get("probes", []) or []:
-        if p.get("id"):
+    for p in as_list(tuned.get("probes")):
+        if isinstance(p, dict) and p.get("id"):
             probes[p["id"]] = p
     return probes
 
 
 def load_records(project: Project) -> dict[str, tuple[str, list[Record]]]:
     out: dict[str, tuple[str, list[Record]]] = {}
-    for path in project.unit_paths:
+    for path in project.unit_paths:          # already in natural (reading) order
         rel = project.rel(path)
         recs = segment(path, rel_to=project.root)
         for r in recs:
             r.path = rel
-        # Claims are reasoned over LOGICAL paragraphs, not physical lines.
-        # See bookkit.segment.paragraphs for why this is not cosmetic.
         out[path.stem] = (rel, paragraphs(recs))
     return out
 
@@ -597,15 +525,13 @@ def load_records(project: Project) -> dict[str, tuple[str, list[Record]]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(
-        description="Concept-centric dossiers and the claim index.")
+    ap = argparse.ArgumentParser(description="Concept-centric dossiers and the claim index.")
     add_common_args(ap)
     ap.add_argument("--probe-report", action="store_true",
                     help="Coverage table per concept; use it to tune probes.")
     ap.add_argument("--concept", help="Emit one dossier by concept id.")
     ap.add_argument("--all", action="store_true", help="Emit every dossier plus an index.")
-    ap.add_argument("--emit-index", action="store_true",
-                    help="(Re)generate bible/claim-index.yaml.")
+    ap.add_argument("--emit-index", action="store_true", help="(Re)generate bible/claim-index.yaml.")
     ap.add_argument("--out", default=None,
                     help="Dossier output dir (default: reviews/concept-dossiers/).")
     ap.add_argument("--index-path", default="bible/claim-index.yaml")
@@ -614,23 +540,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", action="append", default=[],
                     help="Restrict to these concept ids, repeatable.")
     ap.add_argument("--min-units", type=int, default=1,
-                    help="Skip concepts spanning fewer units than this. The gate uses 2: "
-                         "a concept confined to one unit cannot carry a cross-unit "
-                         "contradiction, and the Critic already read that unit.")
+                    help="Skip concepts spanning fewer units (the gate uses 2: a concept "
+                         "in one unit cannot carry a cross-unit contradiction).")
     ap.add_argument("--top", type=int, default=0,
-                    help="Emit only the top N concepts by cross-unit reach (0 = all). "
-                         "One agent run per concept per lens, so this is the cost dial. "
-                         "Whatever is cut is reported.")
-    # The next two mirror bible/audit-config.yaml. They exist so a retrofit run
-    # over a finished book can enable the D2 detector and the persona guard
-    # without writing config files into someone else's project.
+                    help="Emit only the top N concepts (0 = all). The cost dial; what is "
+                         "cut is reported.")
     ap.add_argument("--fix-run-commit", action="append", default=[], metavar="SHA",
-                    help="Short sha of a fix-pass commit, repeatable. Enables the D2 "
-                         "detector: a related pair with one side touched in a fix run "
-                         "and the other not is an incomplete fix.")
+                    help="Short sha of a fix-pass commit, repeatable (D2 detector).")
     ap.add_argument("--persona", action="append", default=[], metavar="NAME",
-                    help="Running-example character name, repeatable. Used only to "
-                         "down-rank pure narration; guarded so it never trims a claim.")
+                    help="Running-example character name, repeatable.")
     ap.add_argument("--round", type=int, default=1, help="Round number, for the record.")
     add_coverage_args(ap)
     args = ap.parse_args(argv)
@@ -641,68 +559,55 @@ def main(argv: list[str] | None = None) -> int:
         cfg.use_blame = False
     cfg.fix_run_commits |= {s.strip() for s in args.fix_run_commit if s.strip()}
     cfg.persona_names += [n for n in args.persona if n.strip()]
-    stopwords = stopwords_for(project.language_variant)
+    lex = load_lexicon(project.language_variant, project.root)
+    sc = Scorer(project.language, lex)
+    stopwords = stopwords_for(project.language_variant, lex.get("stopwords"))
+    if not sc.english and not sc.pack:
+        print(f"[dossier] no language pack for `{project.language}` — claim scoring uses "
+              f"quantities only; expect few claims. Add scripts/lexicons/{project.language}.yaml.")
 
     probes = load_probes(project)
-    if not probes and not args.concept:
-        # No probes is a configuration state, not a crash. It used to exit here,
-        # which meant no coverage record got written — and a MISSING record reads
-        # as "unknown", which the verdict treats as incomplete. The gate is
-        # entitled to tell "MG-1 has nothing to audit" apart from "the emitter
-        # fell over"; silently conflating them is how a book sits at
-        # PASS-PARTIAL with nobody able to say why.
-        print("[dossier] no probes in bible/concept-probes.yaml. Run "
-              "scripts/bootstrap_probes.py, then tune the noisy ones. MG-1 has no "
-              "eligible surface until probes exist.")
-        if args.coverage:
-            CoverageRecord(check="MG-1", round=args.round,
-                           note="no probes configured — MG-1 has no eligible surface"
-                           ).write(args.coverage)
-        return 0
     if args.only:
         probes = {k: v for k, v in probes.items() if k in set(args.only)}
         if not probes:
             sys.exit(f"None of {args.only} is a known probe id.")
+    if not probes and not args.concept:
+        # A configuration state, not a crash — and it still leaves a record, so the
+        # gate can tell "nothing to audit" from "the emitter fell over".
+        print("[dossier] no probes in bible/concept-probes.yaml. Run "
+              "scripts/bootstrap_probes.py, then tune the noisy ones.")
+        if args.coverage:
+            CoverageRecord(check="MG-1", round=args.round, language=project.language,
+                           pack=sc.pack if not sc.english else "en",
+                           blocked="no concept probes configured — run "
+                                   "scripts/bootstrap_probes.py").write(args.coverage)
+        return 0
     kg = load_kg(project)
     records = load_records(project)
+    order = _unit_order(records)
 
     if args.emit_index:
         return emit_index(project, records, kg, probes, cfg, stopwords,
-                          project.root / args.index_path)
+                          project.root / args.index_path, sc)
 
     if args.probe_report:
         print(f"{'concept':28} {'prose':>6} {'units':>6} {'claims':>7}  distribution")
         print("-" * 96)
         for cid, probe in sorted(probes.items()):
-            ps = build_passages(records, probe, cfg, project)
+            ps = build_passages(records, probe, cfg, project, sc)
             claims = [p for p in ps if p.score >= CLAIM_SCORE_THRESHOLD]
-            units = sorted({p.unit for p in ps})
+            units = sorted({p.unit for p in ps}, key=lambda u: order.get(u, 0))
             dist = " ".join(f"{u}:{sum(1 for p in ps if p.unit == u)}" for u in units)
             print(f"{cid:28} {len(ps):>6} {len(units):>6} {len(claims):>7}  {dist[:60]}")
         return 0
 
     out_dir = Path(args.out) if args.out else project.reviews / "concept-dossiers"
     targets = [args.concept] if args.concept else (sorted(probes) if args.all else [])
-    if not targets and not args.all:
-        ap.error("Pick a mode: --probe-report, --concept ID, --all, or --emit-index.")
     if not targets:
-        # `--all` over a project with no probes is a configuration problem, not a
-        # crash. It still has to leave a coverage record: a missing record reads
-        # as "unknown", and the gate is entitled to know the difference between
-        # "nothing to audit" and "the emitter fell over".
-        print("[dossier] no probes to build from — bible/concept-probes.yaml is empty. "
-              "MG-1 has nothing to audit until probes exist.")
-        if args.coverage:
-            CoverageRecord(check="MG-1", round=args.round,
-                           note="no probes configured — MG-1 has no eligible surface"
-                           ).write(args.coverage)
-        return 0
-
+        ap.error("Pick a mode: --probe-report, --concept ID, --all, or --emit-index.")
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows: list[tuple[str, int, int, int]] = []
 
-    # Build first, rank second, emit third. Ranking needs the unit span, and the
-    # span is only known after the passages are gathered.
+    # Build first, rank second, emit third: ranking needs the unit span.
     built: list[tuple[str, dict, list[Passage], list, int, int]] = []
     skipped_span = 0
     for cid in targets:
@@ -710,7 +615,7 @@ def main(argv: list[str] | None = None) -> int:
         if not probe:
             print(f"[dossier] unknown concept id: {cid}")
             continue
-        ps = build_passages(records, probe, cfg, project)
+        ps = build_passages(records, probe, cfg, project, sc)
         if not ps:
             print(f"[dossier] {cid}: no passages matched — tune the probe.")
             continue
@@ -722,54 +627,36 @@ def main(argv: list[str] | None = None) -> int:
         d2 = sum(1 for _s, a, b in pairs if a.in_fix_run != b.in_fix_run)
         built.append((cid, probe, ps, pairs, span, d2))
 
-    # ELIGIBLE = post-filter: concepts with matching passages that span at least
-    # --min-units. That is the denominator, and it is fixed before the ledger and
-    # the quota take anything out of the pool.
+    # ELIGIBLE = post-filter (matching passages spanning >= --min-units), fixed
+    # before the manifest and the quota take anything out of the pool.
     home_of = {cid: (probe.get("home") or kg.get(cid, {}).get("introduced_in") or "")
                for cid, probe, *_ in built}
     subjects: dict[str, Subject] = {}
     for cid, probe, ps, pairs, span, d2 in built:
         _kept, trimmed = trim_home(ps, home_of[cid], cfg, home_cap_for(probe, cfg))
         subjects[cid] = Subject(
-            id=cid,
-            # Every passage of the concept, not only the ones that survive the
-            # home-unit trim: a conservative fingerprint re-queues more often
-            # than strictly needed, and that is the safe direction.
-            fingerprint=composite_fingerprint([p.fp for p in ps]),
-            instances=len(ps),
-            sampled=trimmed > 0,
-        )
+            id=cid, hash=composite_fingerprint([p.fp for p in ps]),
+            stratum="incomplete-fix" if d2 else "cross-unit", instances=len(ps),
+            sampled=trimmed > 0, site=f"home {home_of[cid] or '?'} · spans {span} unit(s)")
 
-    ledger = load_ledger(args.audited).get("MG-1", {})
-    _pool_subjects, already, requeued = partition(list(subjects.values()), ledger)
-    pool_ids = {s.id for s in _pool_subjects}
-    eligible_built = built
-    built = [t for t in built if t[0] in pool_ids]
+    manifest = load_manifest(args.subjects).get("MG-1", {})
+    pool_subjects, already, requeued = partition(list(subjects.values()), manifest)
+    pool_ids = {s.id for s in pool_subjects}
     if already or requeued:
-        print(f"[dossier] ledger: {len(already)} concept(s) already audited under an "
-              f"unchanged fingerprint (skipped, still counted), {len(requeued)} "
-              f"re-queued because their passages changed since.")
+        print(f"[dossier] manifest: {len(already)} concept(s) already audited at their "
+              f"current text (skipped, still counted), {len(requeued)} re-queued.")
 
-    # Two failure modes, two quotas.
-    #
-    # A pre-flagged incomplete fix (D2) is the highest-yield thing an auditor can
-    # open, so it would be tempting to rank purely on it. Do not: ranking two
-    # modes on one scale lets the more numerous one starve the other completely,
-    # and on a real book that emitted 40 of one mode and zero of the other.
-    # `bookkit.selection` exists for exactly this.
+    # Two failure modes, two quotas (bookkit.selection): a pre-flagged incomplete
+    # fix is the highest-yield subject, and ranking on it alone starves the rest.
     selection = stratified_top(
-        built,
+        [t for t in built if t[0] in pool_ids],
         stratum_of=lambda t: "incomplete-fix" if t[5] else "cross-unit",
         rank_within=lambda t: (-t[5], -t[4], t[0]),
-        quota=args.top,
-        weights={"incomplete-fix": 1.0, "cross-unit": 1.0},
-    )
-    emitted = selection.emitted
-    cut = selection.dropped_total
-
-    for cid, probe, ps, pairs, span, d2 in emitted:
-        text = emit_dossier(cid, probe, kg.get(cid, {}), ps, pairs, cfg)
-        (out_dir / f"{cid}.md").write_text(text, encoding="utf-8")
+        quota=args.top, weights={"incomplete-fix": 1.0, "cross-unit": 1.0})
+    rows: list[tuple[str, int, int, int]] = []
+    for cid, probe, ps, pairs, span, d2 in selection.emitted:
+        (out_dir / f"{cid}.md").write_text(
+            emit_dossier(cid, probe, kg.get(cid, {}), ps, pairs, cfg, order), encoding="utf-8")
         rows.append((cid, len(ps), len(pairs), d2))
         if not args.all:
             print(f"[dossier] {cid}: {len(ps)} passages, {len(pairs)} related pairs, "
@@ -780,68 +667,42 @@ def main(argv: list[str] | None = None) -> int:
               f"{args.min_units} unit(s).")
     for line in selection.report_lines("concept"):
         print(f"[dossier] {line}")
-    if cut:
-        print(f"[dossier] {cut} concept(s) NOT emitted because of --top {args.top} — "
-              f"{cut / max(len(eligible_built), 1):.0%} of the eligible surface. MG-1 "
-              f"coverage is partial this round; run another round to drain the pool.")
+    cut = selection.dropped_total
 
     if args.coverage:
-        selected_by_stratum: dict[str, int] = {}
-        eligible_by_stratum: dict[str, int] = {}
-        for t in eligible_built:
-            st = "incomplete-fix" if t[5] else "cross-unit"
-            eligible_by_stratum[st] = eligible_by_stratum.get(st, 0) + 1
-        emitted_subjects: list[Subject] = []
-        for t in emitted:
-            s = subjects[t[0]]
-            s.stratum, s.rank = selection.rank_of(t)
-            selected_by_stratum[s.stratum] = selected_by_stratum.get(s.stratum, 0) + 1
-            emitted_subjects.append(s)
+        for t in selection.emitted:
+            subjects[t[0]].stratum, subjects[t[0]].rank = selection.rank_of(t)
         rec = CoverageRecord(
-            check="MG-1",
-            round=args.round,
-            eligible_candidates=len(eligible_built),
-            selected=len(emitted),
-            emitted=len(emitted),
-            # Depth, not breadth: a dossier whose home unit was trimmed is a
-            # SAMPLE of its concept even though the concept was "covered".
-            sampled_within=sum(1 for s in emitted_subjects if s.sampled),
-            already_audited=already,
-            requeued=requeued,
-            strata={k: {"eligible": v, "selected": selected_by_stratum.get(k, 0)}
-                    for k, v in sorted(eligible_by_stratum.items())},
-            subjects=emitted_subjects,
+            check="MG-1", round=args.round, language=project.language,
+            pack="en" if sc.english else sc.pack, mode="lexicon" if (sc.english or sc.pack)
+            else "quantities-only",
+            eligible=list(subjects.values()), emitted=[t[0] for t in selection.emitted],
+            already_audited=already, requeued=requeued,
             cut=[{"id": c.item[0], "rank": c.rank, "stratum": c.stratum,
                   "instances": len(c.item[2]),
                   "site": f"home {home_of.get(c.item[0]) or '?'} · spans {c.item[4]} unit(s)"}
-                 for c in selection.cut],
-        )
+                 for c in selection.cut])
+        if not subjects:
+            rec.notes.append("zero eligible concepts: full coverage of an empty set, or "
+                             "probes that match nothing across units — read --probe-report")
         rec.write(args.coverage)
         print(f"[dossier] {rec.report_line('concept')} → {args.coverage}")
 
     if args.all and rows:
         idx = ["# Concept dossier index", "",
-               "| Concept | Passages | Related pairs | D2 candidates |",
-               "|---|---:|---:|---:|"]
-        idx += [f"| [{c}]({c}.md) | {n} | {pr} | {d} |" for c, n, pr, d in
-                sorted(rows, key=lambda r: -r[3])]
-        idx += ["", "D2 = a related pair whose two sides have divergent git blame: one was "
-                    "touched in a declared fix run and the other was not. That is the "
-                    "mechanical signature of a fix that landed in 1 of N sites. "
-                    "**Start there.**"]
+               "| Concept | Passages | Related pairs | D2 candidates |", "|---|---:|---:|---:|"]
+        idx += [f"| [{c}]({c}.md) | {n} | {pr} | {d} |"
+                for c, n, pr, d in sorted(rows, key=lambda r: (-r[3], r[0]))]
+        idx += ["", "D2 = a related pair whose sides have divergent git blame (one touched in "
+                    "a declared fix run). **Start there.**"]
         if already:
-            idx += ["", f"> {len(already)} concept(s) are absent because an earlier "
-                        f"round already audited them and their passages have not "
-                        f"changed; they still count as covered. {len(requeued)} came "
-                        f"back into the pool because their text was edited since."]
+            idx += ["", f"> {len(already)} concept(s) already audited at their current text are "
+                        f"absent; they still count. {len(requeued)} came back (edited)."]
         if cut:
-            idx += ["", f"> **{cut} concept(s) below the cut were not emitted** — "
-                        f"{cut / max(len(eligible_built), 1):.0%} of the eligible "
-                        f"surface. MG-1 coverage this round is partial; the verdict is "
-                        f"`PASS-PARTIAL` until the pool drains."]
+            idx += ["", f"> **{cut} concept(s) below the cut were not emitted** — they wait for "
+                        f"a later round."]
         (out_dir / "_index.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
         print(f"[dossier] {len(rows)} dossier(s), index → {out_dir / '_index.md'}")
-
     return 0
 
 

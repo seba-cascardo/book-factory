@@ -1,0 +1,566 @@
+# Language pack — English. Loaded by scripts/bookkit/lexicon.py.
+# Keys are shared across packs; a key missing here means "no list for this
+# language", which the scripts report instead of printing a clean zero.
+# Projects extend a pack with bible/lexicon.yaml (lists append, scalars replace,
+# mappings merge).
+#
+# Convention: every list entry is a Python regex fragment, matched
+# case-insensitively and word-bounded. Plain words are valid fragments. Plain-word
+# lists (no regex): `stopwords`, `name_exclusions`, `non_person_names`,
+# `institution_heads`, `name_connectors`, `locative_prepositions`,
+# `indefinite_articles`, `object_markers`, `common_words`.
+language: en
+
+# ── Rule extraction (MG-2): patterns, not words. ─────────────────────────────
+modality:        # strong prescriptive modality — a rule PRESCRIBES
+  - 'must(?:\s+not)?'
+  - 'never'
+  - 'always'
+  - 'cannot'
+  - 'can''t'
+  - 'do not'
+  - 'don''t'
+  - 'should(?:\s+not)?'
+  - 'only ever'
+  - 'only when'
+  - 'only if'
+  - 'has to'
+  - 'have to'
+  - 'required to'
+  - 'forbidden'
+  - 'avoid'
+  - 'is not allowed'
+  - 'will not work'
+  - 'won''t work'
+  - 'no exceptions'
+universal:       # quantifier half of a descriptive prohibition
+  - 'any'
+  - 'every'
+  - 'all'
+  - 'no'
+  - 'none of'
+  - 'nothing'
+  - 'each'
+breaks:          # consequence half of a descriptive prohibition
+  - 'breaks?'
+  - 'disables?'
+  - 'defeats?'
+  - 'prevents?'
+  - 'invalidates?'
+  - 'forces?'
+  - 'kills?'
+  - 'silently (?:drops?|ignores?|fails?)'
+  - 'falls? back'
+  - 'degrades?'
+  - 'discards?'
+  - 'loses?'
+  - 'voids?'
+  - 'blocks?'
+  - 'refuses?'
+
+# ── Plain-word lists ─────────────────────────────────────────────────────────
+# stopwords — function words plus common sentence openers of dialogue. Used to
+# filter n-grams and to keep sentence-initial common words out of the new-name
+# detector.
+stopwords: [
+  a, an, the, of, in, "on", at, to, for, with, by, from, as, into, onto, out, up,
+  down, over, under, about, against, between, through, during, before, after,
+  above, below, "off", near, since, until, upon, within, without, across, behind,
+  and, or, but, nor, so, yet, if, then, than, because, though, although, while,
+  when, where, whether, once, unless,
+  i, "i'm", "i've", "i'd", "i'll", me, my, mine, myself, you, your, yours, he,
+  him, his, she, her, hers, it, its, we, us, our, they, them, their, theirs,
+  this, that, these, those, who, whom, whose, which, what, how, why,
+  is, are, was, were, be, been, being, am, do, does, did, done, have, has, had,
+  having, can, could, may, might, must, will, would, shall, should,
+  "not", "no", "yes", nothing, something, anything, everything, all, any, both,
+  each, few, more, most, other, some, such, only, own, same, very, just, also,
+  again, further, here, there, now, today, tomorrow, yesterday, still, even,
+  ever, never, always, maybe, perhaps, already, soon, later, outside, inside,
+  hello, hi, hey, bye, thanks, sorry, well, okay, ok, oh, ah, uh, um, hmm,
+  yeah, yep, nope, look, listen, wait, come, please, sure, right, fine, alright,
+]
+
+# name_exclusions — capitalized words that are not people. English capitalizes
+# days, months, nationalities and languages mid-sentence.
+name_exclusions: [
+  monday, tuesday, wednesday, thursday, friday, saturday, sunday,
+  january, february, march, april, may, june, july, august, september, october,
+  november, december,
+  god, lord, mr, mrs, ms, miss, dr, sir, madam, ma'am, mom, mum, dad, mama, papa,
+  grandma, grandpa, aunt, uncle, father, mother, sister, brother, captain, detective,
+  officer, sergeant, professor, doctor, christmas, easter, internet, tv, chapter, part, prologue,
+  epilogue, english, spanish, american, french, german, italian, british,
+  european, latin, catholic, christian,
+]
+
+# non_person_names — capitalized words that are never characters: countries,
+# big cities, platforms, brands, competitions. Not first names (Virginia,
+# Georgia, Florence, Paris-as-a-name are left out on purpose).
+non_person_names: [
+  america, europe, africa, asia, australia, canada, mexico, brazil, argentina,
+  spain, portugal, france, italy, germany, england, britain, ireland, scotland,
+  wales, holland, netherlands, belgium, switzerland, austria, poland, russia,
+  ukraine, greece, turkey, sweden, norway, denmark, finland, china, japan, korea,
+  india, israel, egypt, morocco, united, states, kingdom,
+  london, madrid, barcelona, rome, milan, berlin, amsterdam, brussels, lisbon,
+  vienna, prague, moscow, new, york, miami, chicago, boston, tokyo, beijing,
+  sydney, toronto,
+  google, whatsapp, instagram, facebook, twitter, tiktok, youtube, netflix,
+  spotify, uber, amazon, apple, iphone, android, windows, linux, python, slack,
+  zoom, excel, coke, pepsi, nike, adidas, playstation, xbox, lufthansa, klm,
+  iberia, ryanair,
+  linkedin, paypal, chatgpt, openai, powerpoint, macbook, mcdonald, mcdonalds,
+  walmart, costco, starbucks, carrefour, falcon, ford, toyota, volkswagen, bmw,
+  olympics, bundesliga, champions,
+]
+institution_heads: [
+  bank, street, st, avenue, ave, road, rd, boulevard, lane, square, park, club,
+  bar, pub, café, cafe, restaurant, hotel, hospital, clinic, school, college,
+  university, institute, church, cathedral, station, airport, market, mall,
+  museum, theatre, theater, cinema, river, lake, mount, mountain, island, beach,
+  company, agency, factory, tower, stadium, cemetery,
+]
+name_connectors: [of, the]
+locative_prepositions: [in, into, near]
+indefinite_articles: [a, an]
+# object_markers — prepositions that make the next name an object, not the
+# subject of what follows ("a Gustavo lo miraron").
+object_markers: [to, of, with, for, at, by, from, about, into, onto, in, "on", near,
+  toward, towards, like, than, behind, beside]
+# determiners — a sentence-initial word right before one of these is read as a
+# verb, not a name ("Take the car."); a name rarely takes a determiner next.
+determiners: [the, an, my, your, its, our, their, these, those, every, each]
+
+# common_words — the most frequent word forms of English, folded. The R4 name
+# detector treats a capitalized token that is NOT here, not known to the bible,
+# and never written in lowercase anywhere in the draft or the book as a
+# high-confidence new name, whatever its position. Words that are also frequent
+# first names (will, rose, grace, mark, jack, …) are left out on purpose.
+common_words: [
+  a, an, the, of, in, "on", at, to, for, with, by, from, as, into, onto, out, up, down,
+  over, under, about, against, between, through, during, before, after, above, below,
+  "off", near, since, until, upon, within, without, across, behind, beyond, among,
+  along, around, toward, towards, past, per, via, and, or, but, nor, so, yet, if, then,
+  than, because, though, although, while, when, where, whether, once, unless, whereas,
+  i, me, my, mine, myself, you, your, yours, yourself, he, him, his, himself, she, her,
+  hers, herself, it, its, itself, we, us, our, ours, ourselves, they, them, their,
+  theirs, themselves, this, that, these, those, who, whom, whose, which, what, how,
+  why, is, are, was, were, be, been, being, am, do, does, did, done, doing, have, has,
+  had, having, can, could, might, must, would, shall, should, not, "no", "yes",
+  nothing, something, anything, everything, nobody, somebody, anybody, everybody, none,
+  nowhere, somewhere, anywhere, everywhere, all, any, both, each, few, more, most,
+  other, some, such, only, own, same, very, just, also, again, further, here, there,
+  now, today, tomorrow, yesterday, still, even, ever, never, always, maybe, perhaps,
+  already, soon, later, outside, inside, hello, hi, hey, bye, thanks, sorry, well,
+  okay, ok, oh, ah, uh, um, hmm, yeah, yep, nope, look, listen, wait, come, please,
+  sure, right, fine, alright, one, two, three, four, five, six, seven, eight, nine,
+  ten, eleven, twelve, twenty, thirty, forty, fifty, hundred, thousand, million, first,
+  second, third, fourth, fifth, last, next, finally, suddenly, slowly, quickly,
+  quietly, softly, gently, carefully, sometimes, often, usually, really, actually,
+  certainly, clearly, probably, possibly, simply, nearly, almost, enough, instead,
+  otherwise, however, therefore, meanwhile, afterwards, anyway, besides, together,
+  alone, apart, away, back, forward, home, twice, ahead, abroad, downstairs, upstairs,
+  overhead, early, late, fast, hard, long, far, close, deep, high, low, say, says,
+  said, saying, tell, tells, told, telling, ask, asks, asked, asking, answer, answered,
+  reply, replied, call, called, go, goes, went, gone, going, comes, came, coming, get,
+  gets, got, gotten, getting, make, makes, made, making, know, knows, knew, known,
+  knowing, think, thinks, thought, thinking, take, takes, took, taken, taking, see,
+  sees, saw, seen, seeing, want, wants, wanted, looks, looked, looking, give, gives,
+  gave, given, giving, use, used, using, find, finds, found, finding, feel, feels,
+  felt, feeling, try, tries, tried, trying, leave, leaves, left, leaving, put, puts,
+  putting, mean, means, meant, keep, keeps, kept, keeping, let, lets, begin, begins,
+  began, begun, seem, seems, seemed, help, helps, helped, talk, talks, talked, talking,
+  turn, turns, turned, turning, start, starts, started, show, shows, showed, shown,
+  hear, hears, heard, hearing, play, played, run, runs, ran, running, move, moves,
+  moved, moving, like, likes, liked, live, lives, lived, living, believe, believed,
+  hold, holds, held, holding, bring, brings, brought, happen, happened, write, writes,
+  wrote, written, writing, sit, sits, sat, sitting, stand, stands, stood, standing,
+  lose, lost, pay, paid, meet, met, include, included, continue, continued, set, sets,
+  learn, learned, change, changed, lead, led, understand, understood, watch, watched,
+  watching, follow, followed, stop, stopped, stopping, create, speak, spoke, spoken,
+  read, reading, spend, spent, grow, grew, grown, open, opened, opening, walk, walks,
+  walked, walking, win, won, offer, offered, remember, remembered, love, loved,
+  consider, appear, appeared, buy, bought, waited, waiting, serve, died, die, dies,
+  send, sent, expect, expected, build, built, stay, stayed, fall, fell, fallen, cut,
+  reach, reached, kill, killed, remain, remained, suggest, raise, raised, pass, passed,
+  sell, sold, require, report, decide, decided, pull, pulled, push, pushed, break,
+  broke, broken, nod, nodded, nodding, smile, smiled, smiling, laugh, laughed,
+  laughing, sigh, sighed, shrug, shrugged, stare, stared, glance, glanced, glare,
+  frown, frowned, whisper, whispered, shout, shouted, scream, screamed, cry, cried,
+  sleep, slept, wake, woke, woken, eat, ate, eaten, drink, drank, drunk, kiss, kissed,
+  hug, hugged, touch, touched, closed, knock, knocked, shake, shook, shaken, rise,
+  risen, lie, lay, lying, climb, climbed, drive, drove, driven, ride, rode, wonder,
+  wondered, hoped, wish, wished, need, needed, agree, agreed, carry, carried, hurry,
+  hurried, worry, worried, marry, married, bury, buried, throw, threw, thrown, catch,
+  caught, pick, picked, drop, dropped, hang, hung, lift, lifted, realize, realized,
+  notice, noticed, forget, forgot, forgotten, miss, missed, guess, guessed, man, men,
+  woman, women, child, children, boy, boys, girl, girls, people, person, friend,
+  friends, mother, father, mom, dad, brother, sister, son, daughter, husband, wife,
+  family, baby, kid, kids, guys, house, room, door, doors, window, windows, table,
+  chair, bed, kitchen, floor, wall, walls, stairs, street, road, car, cars, city, town,
+  world, country, place, places, way, ways, thing, things, time, times, day, days,
+  night, nights, morning, evening, year, years, week, weeks, month, months, hour,
+  hours, minute, minutes, moment, moments, life, death, end, part, side, hand, hands,
+  eyes, eye, face, head, hair, mouth, voice, body, heart, blood, arm, arms, leg, legs,
+  feet, foot, shoulder, water, fire, light, air, sun, rain, snow, wind, cold, heat,
+  dark, darkness, silence, noise, smell, fear, hunger, money, work, job, school, word,
+  words, name, question, story, book, letter, phone, paper, picture, good, bad, new,
+  old, great, little, small, big, large, short, young, wrong, "true", "false", real,
+  black, white, red, green, blue, gray, grey, bright, empty, full, hot, warm, cool,
+  quiet, loud, easy, everyone, someone, anyone, no-one, another, become, becomes,
+  became, becoming, beside, best, better, brief, briefly, busy, busily, cannot,
+  certain, chance, cheap, clean, clear, common, complete, completely, couldn't, didn't,
+  doesn't, don't, hadn't, hasn't, haven't, isn't, wasn't, weren't, won't, wouldn't,
+  shouldn't, can't, aren't, i'm, i've, i'd, i'll, you're, you've, you'd, you'll, he's,
+  he'd, he'll, she's, she'd, she'll, it's, we're, we've, we'd, we'll, they're, they've,
+  they'd, they'll, that's, there's, here's, what's, who's, let's, easily, earlier,
+  either, else, elsewhere, entire, entirely, especially, exactly, except, farther,
+  forever, free, fresh, fully, half, happy, happily, hardly, heavy, heavily, hence,
+  immediately, indeed, kind, kinds, least, less, likely, lot, lots, loudly, mainly,
+  many, merely, much, narrow, neither, normal, normally, obviously, odd, oddly,
+  ordinary, others, ought, outer, particular, perfectly, plain, plenty, poor, pretty,
+  properly, quick, quite, rather, ready, rarely, barely, surely, badly, madly, sadly,
+  gladly, silently, firmly, calmly, several, sharp, sharply, shut, simple, slight,
+  slightly, soft, somehow, sometime, somewhat, straight, strange, strangely, strong,
+  sudden, thank, thick, thin, throughout, thus, tight, tired, too, total, totally,
+  truly, unusual, usual, various, whatever, whenever, wherever, whole, wide, wild,
+  worse, worst, able, accept, accepted, accepting, act, acted, add, added, admit,
+  admitted, afraid, age, ago, alive, allow, allowed, angry, animal, anger, apartment,
+  approach, approached, arrive, arrived, arriving, asleep, attack, attention, aunt,
+  uncle, avoid, awake, aware, bag, ball, bank, bar, bath, bathroom, beat, beautiful,
+  bedroom, beer, bell, belong, bench, bird, birthday, bit, bite, bitter, blind, block,
+  blow, blew, board, boat, bone, bottle, bottom, bowl, box, brain, bread, breakfast,
+  breath, breathe, breathed, breathing, bridge, brown, brush, burn, burned, burst, bus,
+  business, button, cake, camera, captain, card, care, cared, careful, case, cat,
+  cause, ceiling, center, chest, chicken, choice, church, cigarette, circle, class,
+  clock, clothes, cloud, coat, coffee, color, colour, corner, cost, couch, count,
+  counted, couple, course, cousin, cover, covered, crowd, cup, curtain, dance, danced,
+  danger, dangerous, date, dead, deal, dear, decision, desk, dinner, dirt, dirty, dish,
+  doctor, dog, dollar, dollars, dream, dreamed, dress, dressed, drawer, dust, duty,
+  ear, ears, earth, edge, egg, engine, enter, entered, escape, escaped, excuse,
+  explain, explained, eyebrow, fact, fair, farm, fat, fault, field, fight, fighting,
+  figure, fill, filled, finger, fingers, finish, finished, fish, flat, flight, flower,
+  flowers, fly, food, fool, force, forest, fork, form, fought, frame, front, fruit,
+  funny, future, game, garage, garden, gate, gift, glad, glass, glasses, gold, grass,
+  ground, group, gun, hall, hallway, handle, happening, hat, hate, hated, hell, hid,
+  hide, hill, history, hit, hole, holiday, horse, hospital, hotel, hungry, hurt, hurts,
+  ice, idea, ill, inch, island, jacket, jaw, joke, juice, key, knee, knees, knife,
+  lady, lake, land, language, laughter, law, lawn, lean, leaned, leather, level,
+  library, lid, lied, lies, lip, lips, list, lock, locked, lunch, machine, mad, mail,
+  main, map, market, match, matter, meal, meat, medicine, memory, mess, message, metal,
+  middle, milk, mind, mirror, mistake, moon, mountain, movie, mud, music, nail, neck,
+  neighbor, nerve, news, newspaper, nice, north, note, notes, number, ocean, office,
+  officer, oil, opinion, orange, order, ordered, paint, painted, pair, pale, palm,
+  parent, parents, park, party, path, patient, pause, paused, peace, pen, pencil,
+  photo, piano, piece, pile, pink, pipe, plan, plane, plant, plate, pocket, point,
+  pointed, police, pool, porch, position, pot, pound, pour, poured, power, present,
+  pressed, price, prison, private, problem, promise, promised, purse, radio, rage,
+  reason, record, relief, rest, rested, return, returned, ring, river, rock, roof,
+  rope, round, row, rule, sad, safe, salt, sand, save, saved, scared, scene, score,
+  sea, seat, secret, sense, served, shadow, shadows, shape, share, shared, sheet,
+  shelf, shelves, ship, shirt, shoe, shoes, shop, shot, shower, sick, sign, signed,
+  silver, sing, sink, sir, skin, skirt, slip, slipped, smelled, smoke, smoked, snake,
+  soap, sock, soldier, song, sound, sounded, sounds, soup, south, space, speech, speed,
+  spoon, spot, spring, square, stair, star, station, steel, step, stepped, stick,
+  stomach, stone, store, storm, stove, strength, string, study, stuff, subject, sugar,
+  suit, supper, surprise, surprised, sweet, swim, switch, tail, tall, taste, tea,
+  teacher, tear, tears, teeth, telephone, television, tent, test, thumb, ticket, tie,
+  tied, tiny, toe, tone, tongue, tooth, top, towel, tower, toy, track, train, trash,
+  tree, trees, trip, trouble, truck, truth, tube, twin, uniform, upset, vegetable,
+  view, village, visit, wagon, war, wash, washed, weapon, weather, wedding, weight,
+  wet, wheel, whistle, wine, wing, winter, wire, wood, wooden, wool, wound, wrist,
+  yard, yellow,
+]
+# initial_verb_forms — regex, full-token match. A token that only ever opens a
+# sentence and matches one of these is a verb or adverb form, not a name.
+# Endings shared with frequent names (-ly Emily/Holly/Beverly, -ing Irving,
+# -fred/-dred/-mmed) are excluded.
+# Card-opening words shaped like nouns are events, not people ("Call with
+# Mary."). Used only for the FIRST word of an outline card field.
+noun_suffixes: [tion, sion, ment, ness, ity, ance, ence, ship, ism, ure]
+
+initial_verb_forms:
+  - '(?![^\W\d_]*(?:fred|dred|mmed|hmed|eed)$)[^\W\d_]{4,}ed'
+  - '[^\W\d_]{3,}(?:ally|fully)'
+  - '[^\W\d_]{4,}ily'
+  - '(?![^\W\d_]*(?:lly|erly|ily)$)[^\W\d_]{4,}ly'
+
+# person_actions — verbs only a person does (see es.yaml).
+person_actions:
+  - 'nod\w*'
+  - 'smil\w*'
+  - 'laugh\w*'
+  - 'sigh\w*'
+  - 'shrug\w*'
+  - 'frown\w*'
+  - 'grinn?\w*'
+  - 'wink\w*'
+  - 'whisper\w*'
+  - 'shout\w*'
+  - 'scream\w*'
+  - 'cr(?:y|ied|ies)'
+  - 'walk\w*'
+  - 'walked'
+  - 'enter\w*'
+  - 'left'
+  - 'arriv\w*'
+  - 'sat'
+  - 'stood'
+  - 'looked'
+  - 'stared'
+  - 'glanced'
+  - 'hugg?\w*'
+  - 'kiss\w*'
+  - 'smok\w*'
+  - 'grabb?\w*'
+  - 'waited'
+  - 'thought'
+  - 'decided'
+  - 'trembl\w*'
+  - 'brought'
+  - 'opened'
+  - 'closed'
+  - 'picked'
+  - 'answered'
+  - 'repl(?:y|ied|ies)'
+  - 'did(?:n.t)? (?:not )?(?:answer|say|look|move|smile|wave|speak)'
+  - 'wav\w*'
+
+# ── Rhetoric budget (count_rhet) ─────────────────────────────────────────────
+# ai_vocab (nonfiction) — the expository vocabulary LLM prose reaches for.
+ai_vocab:
+  - 'delv(?:e|es|ed|ing)'
+  - 'testament to'
+  - '(?:the )?(?:modern |digital |ever-evolving |evolving )landscape'
+  - 'boasts?'
+  - 'realms?'
+  - 'paradigms?'
+  - 'leverag(?:e|es|ed|ing)'
+  - 'utiliz(?:e|es|ed|ing)'
+  - 'facilitat(?:e|es|ed|ing)'
+  - 'encompass(?:es|ed|ing)?'
+  - 'holistic'
+  - 'synerg(?:y|ies)'
+  - 'moreover'
+  - 'furthermore'
+  - 'additionally'
+  - 'seamless(?:ly)?'
+  - 'robust'
+  - 'cutting-edge'
+  - 'game-chang(?:er|ing)'
+  - 'unlock(?:s|ed|ing)?'
+  - 'empower(?:s|ed|ing)?'
+  - 'navigat(?:e|ing) the complexit(?:y|ies)'
+  - 'crucial'
+  - 'pivotal'
+  - 'embark(?:s|ed|ing)? on'
+  - 'foster(?:s|ed|ing)?'
+  - 'streamlin(?:e|es|ed|ing)'
+  - 'in today''s fast-paced'
+  - 'it''s worth noting'
+
+# ai_isms (literary) — fingerprints of LLM fiction in English.
+ai_isms:
+  - 'delv(?:e|es|ed|ing)'
+  - 'tapestry'
+  - 'testament to'
+  - 'a dance of'
+  - 'an intricate dance'
+  - 'nestled'
+  - 'the weight of (?:the |her |his |their |my )?(?:world|truth|guilt|silence|words|decision|past|memories|years|responsibility)'
+  - 'sent a shiver down'
+  - 'a symphony of'
+  - 'pierced the silence'
+  - 'hung in the air'
+  - '(?:was|were) palpable'
+  - 'with bated breath'
+  - 'a whirlwind of (?:emotions|feelings)'
+  - 'etched (?:on|into) (?:her|his|their|my) (?:face|memory|mind)'
+  - 'loomed large'
+  - 'unbeknownst'
+  - 'the air (?:was|grew|felt) thick with'
+  - '(?:let|released) (?:out )?a breath (?:she|he|they|I) didn''t know (?:she|he|they|I) (?:was|were) holding'
+  - '(?:couldn''t|could not) help but'
+  - 'a mix(?:ture)? of \w+ and \w+'
+  - 'a (?:flicker|pang|surge|wave|spark) of'
+  - 'something (?:shifted|broke|snapped) (?:in|inside) (?:her|him|them|me)'
+  - 'every fiber of (?:her|his|their|my) being'
+  - 'time (?:seemed to )?(?:stood still|stop|slow)'
+  - 'somehow'
+
+weasels:
+  - 'very'
+  - 'really'
+  - 'quite'
+  - 'rather'
+  - 'somewhat'
+  - 'fairly'
+  - 'basically'
+  - 'essentially'
+  - 'arguably'
+  - 'virtually'
+  - 'literally'
+  - 'actually'
+  - 'simply'
+  - 'clearly'
+  - 'obviously'
+  - 'certainly'
+  - 'definitely'
+  - 'extremely'
+  - 'incredibly'
+  - 'suddenly'
+  - 'potentially'
+  - 'possibly'
+  - 'perhaps'
+  - 'it seems'
+  - 'sort of'
+  - 'kind of'
+
+# danger (rhet-3) — the dramatic-danger lexicon (rubric rhet-3).
+danger:
+  - 'silently'
+  - 'invisibl\w*'
+  - 'quietly'
+  - 'without (?:complaint|warning)'
+  - 'hidden (?:danger|cost|failure|trap)s?'
+  - 'lurk\w*'
+  - 'time bomb'
+  - 'ticking'
+  - 'insidious(?:ly)?'
+
+# not_x_but_y (rhet-2) — reframe shapes, per the rubric.
+not_x_but_y:
+  # "It's not X, it's Y." / "This isn't X. It's Y."
+  - '(?:it|this|that)(?:''s| is| was) not (?:just |only |simply |merely )?[^.;!?\n]{1,80}?[.,;:—–]\s*(?:it|this|that)(?:''s| is| was)\b'
+  - '(?:it|this|that) (?:isn''t|wasn''t) (?:just |only |simply |merely )?[^.;!?\n]{1,80}?[.,;:—–]\s*(?:it|this|that)(?:''s| is| was)\b'
+  # sentence-initial "Not X but Y" / "Not X. Y"
+  - '(?:^|(?<=[.!?]\s))not (?:just |only |because )?[^.;!?\n]{1,60}?,?\s+but\b'
+  - '(?:^|(?<=[.!?]\s))not (?:a|an|the|just|because|only)\b[^.!?\n]{0,50}\.\s+(?:a|an|the|it|this|just)\b'
+  # "isn't just X; it's Y" / "not only X but also Y"
+  - '(?:isn''t|is not|wasn''t|was not) (?:just|only|merely|simply) [^.!?\n]{1,80}?[;,—–]\s*(?:it''s|it is|it was)\b'
+  - 'not (?:only|just|merely) [^.;!?\n]{1,60}?,? but(?: also)?\b'
+  # "less about X than (about) Y"
+  - 'less about [^.;!?\n]{1,60}? than(?: about)?\b'
+
+template_headings:
+  - 'what''s next'
+  - 'what comes next'
+  - 'key takeaways?'
+  - 'payoff'
+  - 'wrapping up'
+  - 'final thoughts'
+  - 'in summary'
+  - 'summary'
+  - 'conclusions?'
+  - 'why (?:this|it) matters'
+  - 'the big picture'
+  - 'putting it all together'
+  - 'recap'
+  - 'next steps'
+  - 'lessons learned'
+  - 'bottom line'
+
+tease_closings:
+  - 'we''ll see'
+  - 'you''ll see'
+  - 'that''s when things get interesting'
+  - 'but there''s a catch'
+  - 'stay tuned'
+  - 'more on that later'
+  - 'as we''ll (?:soon )?(?:see|discover)'
+  - 'little did (?:she|he|they|I|we) know'
+  - 'but that''s a story for another'
+  - 'the (?:worst|real test) was yet to come'
+  - 'in the next chapter'
+  - 'next up'
+
+# ── Fiction (lint_fiction) ───────────────────────────────────────────────────
+speech_verbs_plain:
+  - 'said'
+  - 'says'
+  - 'asked'
+  - 'asks'
+  - 'answered'
+  - 'replied'
+  - 'told'
+  - 'explained'
+  - 'added'
+  - 'insisted'
+  - 'admitted'
+  - 'announced'
+
+# inverted_subject_verbs — verbs whose subject may follow them (see es.yaml);
+# rare in English prose outside "said X", which the speech verbs cover.
+inverted_subject_verbs: []
+
+speech_verbs_ornate:
+  - 'hiss(?:ed|es)'
+  - 'growl(?:ed|s)'
+  - 'purr(?:ed|s)'
+  - 'spat'
+  - 'scoff(?:ed|s)'
+  - 'snarl(?:ed|s)'
+  - 'bark(?:ed|s)'
+  - 'mutter(?:ed|s)'
+  - 'quipp(?:ed)'
+  - 'retort(?:ed|s)'
+  - 'exclaim(?:ed|s)'
+  - 'snapp(?:ed)'
+  - 'drawl(?:ed|s)'
+  - 'inton(?:ed|es)'
+  - 'chirp(?:ed|s)'
+  - 'sneer(?:ed|s)'
+  - 'bellow(?:ed|s)'
+  - 'roar(?:ed|s)'
+  - 'grumbl(?:ed|es)'
+  - 'mus(?:ed)'
+  - 'opin(?:ed)'
+  - 'interject(?:ed|s)'
+  - 'admonish(?:ed|es)'
+
+gestures:
+  laugh: 'laugh(?:s|ed|ing)?|chuckl(?:e|es|ed|ing)'
+  smile: 'smil(?:e|es|ed|ing)|grinn?(?:ed|ing|s)?|smirk(?:s|ed|ing)?'
+  nod: 'nod(?:s|ded|ding)?'
+  shake head: '(?:shook|shakes|shaking) (?:his|her|their|my) head'
+  sigh: 'sigh(?:s|ed|ing)?'
+  swallow hard: 'swallow(?:s|ed|ing)? hard'
+  shrug: 'shrug(?:s|ged|ging)?'
+  raise eyebrow: '(?:raised|raises|arched|arches|quirked|lifted) (?:an|one|his|her|their|my) eyebrows?'
+  clench jaw: '(?:clench|tighten)(?:es|ed|ing)? (?:his|her|their|my) jaw'
+  bite lip: '(?:bit|bites|biting) (?:his|her|their|my) (?:lower )?lip'
+  frown: 'frown(?:s|ed|ing)?'
+  hand through hair: '(?:ran|runs|running) (?:a|his|her|their|my) hands? through (?:his|her|their|my) hair'
+  roll eyes: 'roll(?:s|ed|ing)? (?:his|her|their|my) eyes'
+  cross arms: 'cross(?:es|ed|ing)? (?:his|her|their|my) arms'
+  clear throat: 'clear(?:s|ed|ing)? (?:his|her|their|my) throat'
+  deep breath: '(?:took|takes|taking|drew|draws) a (?:deep|long|shaky) breath'
+
+cliches:
+  - 'a lump in (?:her|his|their|my) throat'
+  - '(?:her|his|their|my) heart skipped a beat'
+  - '(?:her|his|their|my) blood ran cold'
+  - 'in the blink of an eye'
+  - 'butterflies in (?:her|his|their|my) stomach'
+  - 'calm before the storm'
+  - 'time stood still'
+  - 'a cold sweat'
+  - 'white as a sheet'
+  - 'deafening silence'
+  - 'cut the tension with a knife'
+  - 'tears welled up'
+  - 'the last straw'
+  - 'against all odds'
+
+attribute_terms:
+  eyes:
+    - '(?P<value>brown|blue|green|gr[ae]y|hazel|black|amber)(?:-| )eyed'
+    - '(?P<value>brown|blue|green|gr[ae]y|hazel|black|amber) eyes'
+    - 'eyes (?:were|are|was) (?P<value>brown|blue|green|gr[ae]y|hazel|black|amber)'
+  hair:
+    - '(?P<value>blond|blonde|brown|black|red|gr[ae]y|white|auburn|ginger|silver) hair'
+    - 'hair (?:was|is) (?P<value>blond|blonde|brown|black|red|gr[ae]y|white|auburn|ginger|silver)'
+  age:
+    - '(?P<value>\d{1,3}|[a-z]+(?:-[a-z]+)?) years? old'
+    - '(?:aged|age) (?P<value>\d{1,3})'

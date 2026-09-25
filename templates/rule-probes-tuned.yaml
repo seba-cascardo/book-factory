@@ -1,90 +1,43 @@
 # bible/rule-probes-tuned.yaml — hand-written narrowings for MG-2 rules
 #
-# WHAT THIS IS
+# The rule-side twin of bible/concept-probes-tuned.yaml. A rule that reaches more
+# instances than one agent run can judge ships `tractable: false` and can only be
+# SAMPLED; a sampled subject keeps the gate at PASS-PARTIAL. Narrowing is how it
+# closes by work. Why: docs/rationale/gate.md#depth.
 #
-# The rule-side twin of `bible/concept-probes-tuned.yaml`. That file has always
-# let a human say "this concept is narrower than the extractor guessed". Rules had
-# no equivalent, and that gap had a consequence bigger than convenience.
+# NARROWING IS A CLAIM ABOUT SCOPE. Every entry asserts "this rule does not reach
+# those instances", and that can be wrong. If a rule really governs 87 code blocks,
+# do not shrink it to make a number go down: leave it sampled and accept it under
+# the `manuscript_gate.coverage` waiver.
 #
-# WHY IT EXISTS
-#
-# A rule reaching more instances than an agent can judge in one run ships flagged
-# `tractable: false`, and a sampled subject may never be reported clean. Until
-# this file existed, that flag was derived purely from `len(instances)` — nothing
-# a person could do would change it.
-#
-# Measured on the reference book: 221 of 454 rules were over the ceiling. With a
-# derived-only flag, the depth half of coverage could NEVER reach zero, `PASS`
-# was unreachable by construction, and every project would have ended at a
-# standing waiver. That is the same decay this toolkit argues against for
-# percentage floors — a criterion nobody can satisfy stops meaning anything.
-#
-# So: depth closes by WORK. One rule at a time.
-#
-# ─────────────────────────────────────────────────────────────────────────
-# THE RULE THAT MATTERS: NARROWING IS A CLAIM ABOUT SCOPE
-# ─────────────────────────────────────────────────────────────────────────
-#
-# Every entry here asserts "this rule does not actually reach those instances".
-# That assertion is auditable and it can be wrong. If a rule genuinely governs
-# 87 code blocks across nine chapters, do NOT shrink it to make a number go down:
-# leave it sampled, and waive the depth with `manuscript_gate.depth`. Waiving is
-# the honest outcome. A narrowing written to reach `PASS` is a lie the gate will
-# then repeat back to you as a clean bill of health.
-#
-# ─────────────────────────────────────────────────────────────────────────
-# WHERE THE WORK LIST COMES FROM
-# ─────────────────────────────────────────────────────────────────────────
-#
-# `scripts/manuscript_gate.py` writes every intractable rule, ranked by instance
-# count, to `reviews/manuscript-gate-<date>/round-N/rule-probes-proposed.yaml`,
-# with a commented stub per rule. Copy the ones you have judgement about into
-# this file and uncomment one narrowing. Starting from a blank file is how an
-# escape hatch goes unused.
-#
-# Ids come from the rule index (`round-N/rules/_index.md`). A typo names no
-# candidate and silently does nothing, so the extractor reports unknown ids
-# loudly — read its output after editing this file.
+# The worklist: the gate writes every intractable rule, ranked, with a stub, to
+# reviews/manuscript-gate-<run>/round-N/rule-probes-proposed.yaml. Ids are
+# content-derived (<unit>-<term>-<hash6>) and appear in round-N/rules/_index.md;
+# an unknown id is reported loudly. A narrowed rule stays in the denominator
+# whatever its instance count. Every list field also accepts a single string.
 
 rules:
-  # ── Narrowing: keep the rule, shrink what it reaches ──────────────────────
-  - id: ch-07-0306-concatenate
-    # Replace the derived key terms outright. Use this when the extractor picked
-    # up a term that shares the sentence but not the rule — the usual case, since
-    # a rule naming five identifiers reaches the union of all five.
-    key_terms: [CONCATENATE]
-    note: >
-      the rule is about CONCATENATE on an optimized load; Staging and QVD are
-      the running example's vocabulary, not part of the prohibition
+  - id: ch-07-concatenate-4f2a91
+    key_terms: [CONCATENATE]     # replace the derived terms outright — the usual
+                                 # case: a sentence naming five identifiers reaches
+                                 # the union of all five
+    note: the rule is about CONCATENATE on an optimized load; Staging and QVD are
+      the running example's vocabulary
 
-  - id: ch-11-0182-peek
-    # An instance must ALSO contain these. Use it when the rule applies to a
-    # COMBINATION — `Peek` is fine everywhere except in a watermark read.
-    require_terms: [Max]
-    note: the rule only binds when Peek is used to derive a watermark
+  - id: ch-11-peek-9c01d3
+    require_terms: [Max]         # an instance must ALSO contain these (a combination)
+    note: the rule only binds when Peek derives a watermark
 
-  - id: ch-03-0044-load
-    # Only instances in these units. Use it when the rule is stated globally but
-    # scoped by the chapter's own framing ("in this chapter we assume…").
-    scope_units: [ch-03, ch-04]
-    # Only instances under a heading path containing this string.
-    scope_heading: "Incremental"
-    # Instances matching this regex are out of scope — commented-out code,
-    # deliberate counter-examples, output transcripts.
-    exclude_pattern: '^\s*--\s*counter-example'
+  - id: ch-03-load-77e0b2
+    scope_units: [ch-03, ch-04]  # only instances in these units
+    scope_heading: "Incremental" # only under a heading path containing this
+    exclude_pattern: '^\s*--\s*counter-example'   # instances matching this are out
     note: the prohibition is stated inside the incremental-load walkthrough
 
-  # ── Splitting: one broad rule is really several ───────────────────────────
-  - id: ch-18-0220-aggr
-    # A sentence stating three prohibitions at once reaches everything all three
-    # touch, and no single auditor can hold that. Split it into sub-rules, each
-    # with its own scope. Each becomes its own subject: `<id>--<suffix>`, audited
-    # and tracked separately, and each has to come in under the ceiling on its
-    # own — a split that just re-partitions 87 instances into two lots of 60
-    # bought nothing.
-    split:
-      - suffix: set-inside
-        key_terms: [Aggr]
+  - id: ch-18-aggr-0d5e6f
+    split:                       # one broad rule is really several; each sub-rule
+      - suffix: set-inside       # is its own subject `<id>--<suffix>` and must come
+        key_terms: [Aggr]        # in under the ceiling on its own
         require_terms: [Region]
         note: the set modifier inside the outer aggregation's own parens
       - suffix: set-outside
@@ -92,6 +45,4 @@ rules:
         require_terms: [Sum]
         note: the set modifier outside, where both aggregations see it
 
-# Delete the examples when the first real entry lands. Keep the header: the
-# "narrowing is a claim about scope" rule is what stops this file from turning
-# into a way of making the gate say PASS.
+# Delete the examples when the first real entry lands; keep the header.

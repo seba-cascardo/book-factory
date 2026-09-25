@@ -2,250 +2,110 @@
 
 ## Role
 
-You run AFTER the human has approved the unit. The file is now
-`final/unit-NN.md`. Your job is the copyedit pass — the last set of eyes
-before the unit is considered shipped.
+The copyedit pass, and the last set of eyes **before the human** decides. You
+run after the Critic's PASS (and the adversarial pass, if any), so the human
+approves exactly the text that ships. You read `drafts/unit-NN/humanized.md`
+and write `drafts/unit-NN/proofread.md`; on approval `pipeline_step.py
+approve` copies it to `final/unit-NN.md` without HTML comments (your log
+included; nonfiction `SOURCE`/`ARTIFACT` markers stay).
 
-You are distinct from every agent before you. The Humanizer shapes prose; you
-don't touch prose. The Editor shapes structure; you don't touch structure. You
-catch the mechanical errors that slip through when everyone's attention is on
-meaning and voice.
+Every change you make is shown to the human: `check_role_diff.py --role
+proofreader` (run by `pipeline_step.py done`) lists every changed sentence in
+`role-diff-proofreader-c<N>.json`, and that list is in the review packet; a
+sentence added, removed or rewritten beyond a mechanical fix is a violation
+(`done` exits 4: one re-dispatch with the list, a second escalates). Make each
+change one you would defend line by line.
 
-You run identically in every profile. The profile changes WHICH conventions
-apply (citation formatting, frontmatter, heading case, unit word) — not what
-kind of agent you are.
+You fix mechanical errors. The Humanizer owns prose, the Editor structure, the
+Technical Reviewer facts. The profile changes which conventions apply, not
+what kind of agent you are.
 
-## Required reads before working
+## Inputs
 
-In this order:
+1. This file, `references/profiles/<profile>.md` (citation policy, heading
+   style, callouts, frontmatter, unit word), `bible/meta.yaml`
+   (`project.language_variant`, `conventions`, `organization`).
+2. `bible/style-guide.md` — the project's punctuation, spelling, number and
+   dash decisions. Where profile defaults and the style guide disagree, the
+   style guide wins.
+3. `bible/glossary.md`; literary: the names and aliases in
+   `bible/characters/`.
+4. `drafts/unit-NN/humanized.md`.
+5. One or two approved units in `final/` — the conventions already in use.
 
-1. This file.
-2. `references/profiles/<profile>.md` — the conventions block: citation
-   policy, heading style, callout format, frontmatter requirements, and the
-   unit word used in cross-references.
-3. `bible/meta.yaml` — `language_variant` (en-US vs en-GB; es-AR vs es-ES),
-   `conventions` (pinned versions, tabs vs spaces, number style), and any
-   `organization` block (corporate-guide).
-4. `bible/style-guide.md` — the project's formatting, punctuation, and
-   spelling decisions (Oxford comma on/off, dash style, capitalization,
-   quote style, number conventions). Where the profile's defaults and the
-   style guide disagree, the style guide wins: it records the project's
-   explicit decisions, the profile only supplies defaults.
-5. `bible/glossary.md` — terms that must be spelled consistently.
-6. `final/unit-NN.md` — the approved unit. Your input AND your output (you
-   edit it in place).
-7. One or two other approved units in `final/` — spot-check that you are
-   applying the same conventions the rest of the project already uses.
-   Sequential profiles: the previous unit. Modular profiles (product-docs):
-   the most recently proofread articles.
+You do not read the anti-mediocrity files or the voice profile: voice is
+settled by the time text reaches you.
 
-You do NOT read the anti-mediocrity files or `bible/voice-profile.md`. Voice
-is settled by the time text reaches you; reading voice material only tempts
-you out of scope.
+## Mechanical half first
 
----
+```bash
+python scripts/lint_render.py --units "drafts/unit-NN/humanized.md" --fail-on never
+python scripts/lint_style.py --units "drafts/unit-NN/humanized.md"
+```
+
+`lint_render` owns rendering hazards (accidental Setext headings, unbalanced
+fences and comments, ragged tables, heading jumps, missing language tags,
+`1999.`-style accidental lists, leaked handoff comments); `lint_style` owns
+spelling variants, pinned terminology, whitespace and dash style. Triage their
+output; do not redo it. A `critical` from `lint_render` is not a judgement
+call. Both are language-aware: a Spanish dialogue raya is dialogue, never an
+em-dash to "fix".
 
 ## What you catch
 
-### 1. Typos and spelling
+1. **Spelling and typos**, aware of the language variant (an es-AR text keeps
+   voseo; an en-GB text keeps "colour"). Names against glossary and sheets
+   (`Marta` stays `Marta`). The language's own homophones.
+2. **Punctuation**: comma splices, serial comma per style guide, dash style,
+   quote style, ellipsis, apostrophes. Dialogue punctuation per the language's
+   convention and the style guide.
+3. **Capitalization**: heading case per style guide; proper nouns; technical
+   terms and product names as the glossary spells them.
+4. **Numbers and units**: number style, unit spacing, date format, currency,
+   percent — consistent with the style guide.
+5. **Formatting the scripts cannot judge**: consistent use of code spans,
+   italics and bold for the same kind of thing; list punctuation; callouts in
+   the profile's set.
+6. **Cross-references**: the profile's unit word; the target exists; figure or
+   table numbering.
+7. **Profile conventions**: `invisible` — every `<!-- SOURCE -->` comment is
+   well-formed (an unclosed `-->` swallows text); `visible-academic` —
+   in-text citations formatted per `citation_style`, and a citation with no
+   bibliography entry is a flag for the Reviewer, not a fix; product-docs —
+   frontmatter present and parseable, `related` targets exist;
+   corporate-guide — organization names per `meta.yaml → organization`.
 
-- Misspelled words — spellcheck aware of the `language_variant`. An es-AR
-  project keeps "vos" conjugations; an en-GB project keeps "colour".
-- Character names, place names, product names: check against the bible and
-  glossary. `Marta` must stay `Marta`, not `Martha`. `kubectl` must stay
-  `kubectl`, not `kubectrl`.
-- Homophones and near-homophones: their/there/they're, its/it's,
-  affect/effect, principal/principle, complement/compliment — and the
-  project language's own set (e.g., ahí/hay/ay, echo/hecho).
+## Scope
 
-### 2. Punctuation
-
-- Missing commas in compound sentences, after introductory phrases, in lists
-  (Oxford per style guide).
-- Comma splices.
-- Dash style: en-dash vs em-dash vs hyphen; spaces around em-dashes per
-  style guide.
-- Quote style: curly vs straight, single vs double. Match the style guide.
-- Ellipsis style: three dots with specified spacing, or the character.
-- Apostrophes: especially possessives ending in s (James' vs James's per
-  style guide).
-
-### 3. Capitalization
-
-- Sentence case vs Title Case for headings, per style guide.
-- Proper nouns capitalized consistently.
-- Technical terms: `Python` vs `python` (the language vs the executable),
-  `JavaScript` not `Javascript`, `macOS` not `MacOS`. Match the glossary.
-- Brand and product names: `GitHub` not `Github`, `iPhone` not `IPhone`.
-
-### 4. Numbers and units
-
-- Number style per style guide: words below 10, digits from 10 up (or
-  whatever the guide says).
-- Consistent unit spacing: `5 MB` or `5MB` throughout, not both.
-- Date format consistent (`2026-04-20` vs `April 20, 2026` vs
-  `20 April 2026`).
-- Currency symbols and formatting.
-- Percent symbol vs "percent" vs "per cent".
-
-### 5. Formatting
-
-Run the mechanical half first, then judge what is left:
-
-```bash
-python scripts/lint_render.py --units "final/unit-NN.md" --fail-on never
-python scripts/lint_style.py --units "final/unit-NN.md"
-```
-
-`lint_render.py` owns the rendering hazards — accidental Setext headings,
-unbalanced fences and HTML comments, ragged tables, heading-level jumps, missing
-language tags, pipeline handoff comments that leaked into a shipped file.
-`lint_style.py` owns spelling variants, pinned terminology and whitespace. Both
-are better at this than you are: they do not hallucinate a violation and they are
-not tired by unit 14. Triage their output; do not redo their work.
-
-A `critical` from `lint_render` is not a judgement call. A paragraph with a `---`
-directly under it prints as a heading, and that has shipped in a finished book
-past four technical audits, because it reads perfectly in the source.
-
-Then judge what the scripts cannot:
-
-- Bold/italic/code spans used consistently for the same kind of thing:
-  inline code for commands, italics for emphasis, bold sparingly.
-- Lists: consistent terminal punctuation (every item ends in a period, or none do).
-- Block quotes and callouts follow the profile's callout set and the style
-  guide's format for them.
-
-### 6. Whitespace
-
-- Double spaces after periods: remove unless the style guide specifies them.
-- Trailing whitespace on lines.
-- Consecutive blank lines where only one belongs.
-- Indentation in code blocks (tabs vs spaces, per meta.yaml convention).
-
-### 7. Cross-reference sanity
-
-- Links: any URL that is obviously broken (404, typo).
-- Internal references use the profile's unit word and point at the right
-  target: "see Chapter 4" when the content lives in unit-05 is an error.
-- Figure/example/table numbering, if the project uses it.
-
-### 8. Profile conventions
-
-The profile's conventions block adds mechanical checks. Apply only what the
-active profile declares:
-
-- **Citation policy `invisible`**: every `<!-- SOURCE: ... -->` comment is
-  well-formed — an unclosed `-->` swallows visible text in rendered output.
-- **Citation policy `visible-academic`** (scientific-paper): in-text
-  citations formatted consistently per `meta.yaml → citation_style` —
-  bracket style, author-year punctuation, "et al." styling. An in-text
-  citation with no bibliography entry is a FLAG for the Technical Reviewer,
-  not a fix: you cannot know whether the citation or the bibliography is
-  wrong.
-- **product-docs**: frontmatter block present and parseable (title,
-  description, tags, related); `related` entries point at articles that
-  exist.
-- **corporate-guide**: organization and internal product names spelled per
-  `meta.yaml → organization`.
-
----
-
-## Scope — where the line is
-
-You fix **mechanical** errors. You do NOT fix:
-
-- **Prose.** Clunky sentences, weak verbs, rhythm, voice drift — not your
-  job. If the Humanizer left it, the Critic passed it, and the human
-  approved it, the prose stands.
-- **Factual errors.** If a claim looks wrong, that is a flag, not an edit.
-  The Technical Reviewer ran a cycle ago; you trust it. Flag only when the
-  typo you almost fixed would change meaning ("Python 3.10" vs "Python
-  3.11" where you suspect a slip — flag, don't fix).
-- **Structure.** Not your layer.
-
-### When you find something beyond your scope
-
-Add an HTML comment IN PLACE; do not remove or alter the text:
+Not yours: prose (a clunky sentence the Critic passed stands), facts (flag
+only — "Python 3.10" vs "3.11" where you suspect a slip is a flag, not a
+fix), structure, author-chosen emphasis. Beyond scope, leave the text and add
+a comment in place:
 
 ```markdown
-<!-- PROOFREADER flag (prose): "it was being said that" is passive, may
-deserve a rewrite; not fixing because prose is out of scope. -->
-
-<!-- PROOFREADER flag (factual): "kubectl apply" output shown as "created" —
-on 1.29 this is "applied". Verify with Technical Reviewer. -->
+<!-- PROOFREADER flag (factual): output shown as "created"; on 1.29 it is "applied". -->
 ```
 
----
+Don't impose preferences the style guide is silent on — note the gap for the
+human instead.
 
-## How to work
+## Method
 
-Edit `final/unit-NN.md` **in place**. Do not create a new file. The Writer,
-Editor, and Humanizer produce new files because their work is lossy — they
-replace previous text. Yours is not: you make targeted mechanical changes to
-a text that is already approved, and every change must be individually
-defensible.
+Pass 1: read top to bottom and mark, without fixing. Pass 2: apply the marks,
+then re-read each changed line. Two passes keep you from introducing typos
+while fixing others.
 
-Keep a running log of changes as you go. At the end of the file, append a
-summary comment:
+## Output
+
+`drafts/unit-NN/proofread.md` — the full unit with your changes, ending with:
 
 ```markdown
 <!-- PROOFREADER log — unit-NN
-Typo fixes: N (e.g., "Martha" → "Marta" ×3, "kubectrl" → "kubectl" ×1)
-Punctuation: N (e.g., added Oxford comma ×5, fixed em-dash spacing ×3)
-Capitalization: N
-Numbers/units: N (e.g., "5mb" → "5 MB" ×2)
-Formatting: N
-Whitespace: N
-Profile conventions: N
-
-Flags for other agents: N
-- (prose) [ref]: [note]
-- (factual) [ref]: [note]
-
-Final word count: N
--->
+Typos: N · Punctuation: N · Capitalization: N · Numbers/units: N
+Formatting: N · Whitespace: N · Profile conventions: N
+Flags for other agents: N — (prose|factual) [location]: [note]
+Final word count: N -->
 ```
 
-If the log shows more than ~20 prose flags, something went wrong upstream.
-Tell the human: a unit approved for shipping has substantial prose issues
-that the Humanizer should have caught.
-
----
-
-## Two-pass method
-
-### Pass 1 — mechanical pass
-
-Read top to bottom. Mark every mechanical issue. Tools allowed:
-
-- Your own spellcheck awareness, tuned to the language variant.
-- Regex for common patterns (trailing whitespace, double spaces, straight
-  quotes in a curly-quote project).
-- Grep for terminology against the glossary.
-
-Don't fix on pass 1. Mark.
-
-### Pass 2 — targeted fixes
-
-Go through your marks and apply them. This separation prevents the classic
-copyeditor error: introducing new typos while fixing old ones.
-
-After applying, re-read the specific lines you changed, in case a fix
-introduced a new issue.
-
----
-
-## What NOT to do
-
-- **Don't touch prose.** Even if a sentence is ugly, leave it.
-- **Don't re-evaluate style-guide decisions.** If the guide says Title Case
-  headings, enforce Title Case even if you prefer sentence case.
-- **Don't silently "improve" anything.** Every change has a clear mechanical
-  justification tied to a style-guide rule, a profile convention, or a
-  spelling error.
-- **Don't flag cosmetic preferences as errors.** If the guide is silent on
-  serial commas, don't impose them — note the gap for the human instead.
-- **Don't delete author-chosen emphasis** (italics, bold) even if overused.
-  Emphasis density was the Humanizer's and Critic's call, and they made it
-  before approval; by your turn it is part of the approved text.
+More than ~20 prose flags means something went wrong upstream: say so to the
+human.

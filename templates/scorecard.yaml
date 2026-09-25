@@ -1,37 +1,35 @@
 # drafts/unit-NN/scorecard.yaml — the Critic's machine-readable truth
 #
-# The canonical per-unit artifact is ALWAYS drafts/unit-NN/scorecard.yaml.
-# The verdict is COMPUTED from these items, not asserted — see
-# references/rubric.md § "Verdict computation — AUTHORITATIVE", the only place
-# that rule lives. critique.md renders this file for humans; this file, not
-# that one, carries the authority.
+# The verdict is COMPUTED from these rows per references/rubric.md § Verdict
+# computation — the only place that rule lives. critique.md renders this file;
+# this file carries the authority.
 #
-# One project runs exactly one rubric (nonfiction OR literary), so ids never
-# collide. Emit one row per APPLICABLE rubric item, after applying the two
-# override layers in order: references/profiles/<profile>.md § Rubric deltas,
-# then bible/voice-profile.md § Rhetoric budget (rhet quotas only). Items you
-# cannot evaluate (e.g. reader_pov-* in fast mode) get status: not_applicable
-# with a one-line reason in evidence.
+# Rows come from references/rubric.md (rhet) plus ONE family file, after the
+# profile's § Rubric deltas and the voice profile's rhetoric_budget fence:
+#   nonfiction (references/rubric-nonfiction.md): scope · outline · tech_a ·
+#     tech_b · pedagogy · voice · reader_pov (full) · code · consistency ·
+#     forward_refs · rhet · profile (+ paper-* / corp-* / docs-* / modular-*)
+#   literary (references/rubric-literary.md): beats · character · arc · ending ·
+#     voice · craft · format · reader_pov · continuity · rhet (rhet-2 only)
+# One row per applicable item; not_applicable rows carry a one-line reason.
 
 schema_version: "3.0"
 unit: "unit-NN"
-rubric: "nonfiction"             # nonfiction | literary (matches the profile)
-mode: "fast"                     # fast | full — affects minor-fail tolerance
+family: "nonfiction"             # nonfiction | literary
+tolerance: "fast"                # fast | full (nonfiction full mode and literary: full)
+cycle: 1
 generated_at: "YYYY-MM-DDTHH:MM:SSZ"
+checks: "drafts/unit-NN/checks.json"   # the script counts the counted rows copy
 
 # ─────────────────────────────────────────────────────────────────────────
-# items — every entry has EXACTLY these seven fields (see rubric.md schema):
-#   id              stable id, e.g. scope-1, rhet-3, craft-5
-#   rubric          the family it belongs to
-#   name            one line: what was checked
-#   severity        critical | significant | minor
-#   status          pass | fail | not_applicable
-#   evidence        fails: quoted lines / file:line / one-sentence diagnosis.
-#                   passes: optional — EXCEPT rhet items, where evidence must
-#                   ALWAYS carry the count (pass or fail); a rhet row without a
-#                   count is invalid.
-#   loopback_target fails: Writer | Editor | Humanizer |
-#                   Reader_POV_plus_Humanizer | escalate. null on pass/na.
+# items — EXACTLY these seven fields per row:
+#   id · rubric · name · severity (critical | significant | minor)
+#   status (pass | fail | not_applicable)
+#   evidence — fails: quote / file:line / one-sentence diagnosis. Counted rows
+#              ALWAYS carry the number copied from checks.json, pass or fail;
+#              a counted row without it is invalid. Never a recount.
+#   loopback_target — fails only: Writer | Editor | Humanizer | escalate;
+#                     null on pass / not_applicable.
 # ─────────────────────────────────────────────────────────────────────────
 items:
   - id: scope-1
@@ -42,40 +40,38 @@ items:
     evidence: null
     loopback_target: null
 
-  - id: outline-2
-    rubric: outline
-    name: "Every concepts_used appears earlier, here, or in prerequisites"
-    severity: critical
-    status: pass
-    evidence: null
-    loopback_target: null
-
-  # --- rhet family: evidence ALWAYS carries the count, pass or fail ---
-  - id: rhet-1
-    rubric: rhet
-    name: "Rhetorical questions in prose within quota (<= 2)"
-    severity: significant
-    status: pass
-    evidence: "count=1 (line 84)"      # count REQUIRED even on pass
-    loopback_target: null
-
-  - id: rhet-3
-    rubric: rhet
-    name: "Dramatic-danger lexicon within quota (<= 2)"
+  - id: tech_a-4
+    rubric: tech_a
+    name: "No invented identifiers"
     severity: significant
     status: fail
-    evidence: "count=4 (silently x2 L40 L91, hidden cost L120, lurking L131)"
-    loopback_target: Humanizer
+    evidence: "checks.json identifiers.unknown=1: GroupSum() at humanized.md:212 (in code); not verified in tech-review.md"
+    loopback_target: Writer
+
+  - id: rhet-1
+    rubric: rhet
+    name: "Rhetorical questions within quota"
+    severity: significant
+    status: pass
+    evidence: "checks.json counts.rhet-1: count=1 / quota 2 (L84)"
+    loopback_target: null
 
   - id: rhet-6
     rubric: rhet
     name: "Opening structure differs from the previous unit's"
     severity: significant
     status: pass
-    evidence: "this=contrarian-data-point; prev=field-case (differ → pass)"
-    # rhet-6 evidence ALWAYS records both this unit's and the previous unit's
-    # declared opening structure, so the next unit has its reference. First
-    # unit auto-passes with evidence: "this=<structure>; prev=none (first unit)".
+    evidence: "this=field-case (declared and actual); prev=counterintuitive-data"
+    # Always record both, so the next unit has its reference. First unit:
+    # "this=<structure>; prev=none (first unit)".
+    loopback_target: null
+
+  - id: voice-8
+    rubric: voice
+    name: "Humanizer within its budget"
+    severity: significant
+    status: not_applicable
+    evidence: "no pipeline.humanizer_budget; touched_ratio=0.18 (checks.json role_diff.humanizer)"
     loopback_target: null
 
   - id: reader_pov-1
@@ -86,38 +82,18 @@ items:
     evidence: "fast mode — Reader-POV did not run per unit"
     loopback_target: null
 
-  # … continue for every applicable item in the project's rubric, in the
-  # family order of references/rubric.md. Literary projects emit the literary
-  # families (beats, character, arc, voice, craft, reader_pov, continuity) plus
-  # the rhet subset (rhet-2, rhet-6). Nonfiction emits scope, outline, tech_a,
-  # tech_b, pedagogy, voice, reader_pov, code, consistency, forward_refs, rhet,
-  # profile — as narrowed/extended by the profile's rubric deltas.
+  # … every applicable row, in the family order of the family file.
 
 # ─────────────────────────────────────────────────────────────────────────
-# computed_verdict — echoes references/rubric.md § Verdict computation.
-# The skill RECOMPUTES this from `items` on read; the Critic caches it here for
-# readability only. If the cached value and the recomputation disagree, the
-# items are the truth — fix the items, never override the verdict.
-#
-# Rule (authoritative copy lives ONLY in rubric.md; reproduced here as the
-# check the Critic must apply, not as a second source of truth):
-#   any fail with loopback_target == escalate     → ESCALATE
-#   count(critical fails) >= 2                     → REWORK   (→ Writer)
-#   count(critical fails) == 1                     → REVISE
-#   count(significant fails) >= 1                  → REVISE
-#   count(minor fails) >= 3 and mode == full       → REVISE
-#   any minor fail                                 → PASS, with notes
-#   else                                           → PASS
-# (Literary uses full-mode minor tolerance.)
-#
-# REVISE target: all failing items share one target → that target; split →
-# target of the highest-severity failing item; still tied → Writer.
+# Computed from `items` per references/rubric.md. If this cache and the rows
+# disagree, the rows are the truth — fix the rows, never the verdict.
 # ─────────────────────────────────────────────────────────────────────────
 computed_verdict: "REVISE"       # PASS | REVISE | REWORK | ESCALATE
-verdict_basis: ">=1 significant fail (rhet-3) → REVISE"   # the rule line hit
-loopback_target: Humanizer       # resolved from the failing items; null on PASS
+verdict_basis: ">=1 significant fail (tech_a-4) → REVISE"
+loopback_target: Writer          # null on PASS
+most_important_problem: "tech_a-4: GroupSum() in the §3 example does not exist in the pinned release."
 
-totals:                          # convenience mirror of the item statuses
-  critical:    { pass: 2, fail: 0, na: 1 }
-  significant: { pass: 2, fail: 1, na: 0 }
+totals:
+  critical:    { pass: 1, fail: 0, na: 1 }
+  significant: { pass: 2, fail: 1, na: 1 }
   minor:       { pass: 0, fail: 0, na: 0 }

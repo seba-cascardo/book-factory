@@ -1,14 +1,20 @@
 # Verification plan — [project name]
 
+<!--
+reviews/verification-plan/PLAN.md. The manuscript gate APPENDS one `### V-NN`
+entry per new checkable `deferred` item (inserted before "What was left out") and
+never rewrites this file: write the setup, the short path and the results here by
+hand, and they survive every run. Rules: references/verification-plan.md.
+-->
+
 **Why this exists:** the pipeline could not establish the claims below, and
-reality can. [Name what is missing: no runner for surface X · no access to the
-live system · the process owner has not confirmed it · the source of record is
-not in `bible/sources/`.]
+reality can. [No runner for surface X · no access to the live system · the process
+owner has not confirmed it · the source of record is not in `bible/sources/`.]
 
 **Target environment / source of truth:** [product + edition + version, matching
 `meta.yaml` pins · or the system, the team, the document]
 
-**Waiver:** `project-status.yaml → waivers → [check id]`
+**Waiver:** `project-status.yaml → waivers → [check id]` (its `plan:` points here)
 
 **Status:** [N] checks · [N] answered · [N] `NOT RUN`
 
@@ -16,114 +22,69 @@ not in `bible/sources/`.]
 
 ## How to use this document
 
-1. Work through **Setup** once. It prepares what most checks share.
-2. Run checks in any order. The **short path** below is the five or six highest
-   value ones if you only have forty minutes.
-3. Fill `**Actual result:**` **in this file**, with literal values — the number,
-   the error text, the words the person actually used. Not "works as expected".
-4. Skipping one? Write `NOT RUN` and why. An empty slot is ambiguous; `NOT RUN`
-   is not, and at 20% coverage that difference is the whole report.
-5. **If a result surprises you, do not fix the book yet.** Record it, finish the
-   block, then decide. A surprising result often means the *check* is wrong, and
-   a hurried fix on an incomplete list has already forced one whole pass to be
-   reverted.
+1. Work through **Setup** once.
+2. Run checks in any order; the **short path** is the highest-value five or six.
+3. Fill `**Actual result:**` in this file with literal values — the number, the
+   error text, the words the person used. Not "works as expected".
+4. Skipping one? Write `NOT RUN` and why. An empty slot is ambiguous.
+5. **A surprising result: do not fix the book yet.** Record it, finish the block,
+   then decide — the check may be wrong.
 
 ## Short path — [N] checks, ~[N] minutes
 
 | Check | Settles | Time |
 |---|---|---|
-| V-01 | [which open critical finding, by id] | ~8 min |
+| V-01 | [which open critical finding, by key] | ~8 min |
 
 ## Time estimate
 
 | Block | Checks | What it needs | Est. |
 |---|---:|---|---|
-| A — [subsystem / question area] | | runner · live-system · person · … | |
+| A — [area] | | runner · live-system · person · … | |
 | **Total** | | | |
 
 ---
 
 ## Setup
 
-<!--
-ONE setup, prepared once, deterministic. Every property below exists because it
-makes some specific claim checkable. Keep the mapping table — without it, the
-next person "simplifies" the setup and silently removes the discrimination the
-checks depend on.
-
-When the answer comes from a person rather than a system, the "setup" is knowing
-who owns the knowledge and what exactly to ask them. Write that here.
--->
+<!-- ONE setup, prepared once, deterministic. Keep the mapping table: without it
+the next person "simplifies" the setup and removes the discrimination the checks
+depend on. For a person, the setup is who owns the knowledge and what to ask. -->
 
 ### What each property exposes
 
 | Property of the setup | Which claim it makes checkable |
 |---|---|
-| [e.g. a category present in the data and absent from the config table] | [V-04, V-05 — the wildcard claim at `final/unit-08.md:63`] |
-| [e.g. ~12 rows with a null key] | [V-11 — the null-handling claim at `unit-06.md:210`] |
-| [e.g. the process owner for approvals is <role>] | [V-20 — the three-day claim at `unit-04.md:88`] |
+| [a category present in the data and absent from the config table] | [V-04 — the wildcard claim at `final/unit-08.md:63`] |
 
 ### Preparation
 
-<!-- Paste-ready. Deterministic: same result on every run. Call out anything that
-     depends on the current date. -->
-
 ```[language]
-[the complete setup script — or, for non-code checks, the access needed and who
- to arrange it with]
+[paste-ready setup — or the access needed and who arranges it]
 ```
 
 ### Safety protocol — [block with destructive or lockout risk]
 
-<!-- Belongs HERE, next to the checks it protects, not in a preamble nobody
-     rereads. E.g.: duplicate a clean baseline per check, because a bad security
-     configuration can lock you out of the application entirely. -->
+<!-- Next to the checks it protects, not in a preamble. -->
 
 ---
 
-# Block A — [subsystem / question area]
+## Block A — [area]
 
-### V-01 — [what this settles, in a few words]
+### V-01 — [what this settles]
 
-- **Claim:** `final/unit-NN.md:LINE` [and the passage it contradicts, if any]
-- **Finding:** [gate finding id + severity] · [deferred item id, if it came from one]
 - **Needs:** runner | live-system | measurement | person | document-of-record
-- **Setup:** [what is required beyond the shared setup; "none" is a valid answer]
+- **Claim:** `final/unit-NN.md:LINE` · **Finding:** [key + severity, if any]
+- **Setup:** [beyond the shared setup; "none" is valid]
 
 ```[language]
-[paste-ready code — the thing to run, not a description of it]
+[paste-ready code — or the exact screen and click, the number to count, the
+ question to ask and of whom]
 ```
 
-<!-- For a non-code check, replace the block above with the exact observation:
-     the screen and the click, the number to count and how, or the question to
-     ask and of whom. The test is that someone else could do it without
-     designing anything. -->
-
-- **What the book expects:** [concretely, with the number or behavior, and the
-  passage that says so]
-- **Suspect a defect if:** [the specific observation that would mean the book is
-  wrong, and which passage would then be at fault. Write this BEFORE checking —
-  an entry that only says what is expected invites reading the result as
-  confirmation.]
-- **Also record:** [any secondary value worth capturing while you are here]
-
-**Actual result:**
-
-
----
-
-### V-02 — [...]
-
-- **Claim:**
-- **Finding:**
-- **Needs:**
-- **Setup:**
-
-```[language]
-```
-
-- **What the book expects:**
-- **Suspect a defect if:**
+- **What the book expects:** [concretely, and the passage that says so]
+- **Suspect a defect if:** [written BEFORE checking: the observation that means the
+  book is wrong, and which passage is at fault]
 
 **Actual result:**
 
@@ -132,11 +93,7 @@ who owns the knowledge and what exactly to ask them. Write that here.
 
 ## What was left out, and why
 
-<!--
-Do not delete this section. A plan that silently omits an area reads as coverage.
-State what is unchecked and why: no environment, destructive, needs data or
-access you do not have, out of scope for this book's claims.
--->
+<!-- Do not delete: a plan that silently omits an area reads as coverage. -->
 
 | Area | Why unchecked | What would change that |
 |---|---|---|
@@ -145,16 +102,11 @@ access you do not have, out of scope for this book's claims.
 
 ## Results roll-up
 
-<!-- Fill as answers arrive. This is what feeds back into the gate. -->
-
 | Check | Result | Verdict | Where it goes |
 |---|---|---|---|
-| V-01 | | confirmed defect / confirmed correct / still surprising | gate finding / `claim-index.verified_against` / `deferred` |
+| V-01 | | confirmed defect / confirmed correct / still surprising | findings file / `claim-index.verified_against` / `deferred` |
 
-**Confirmed defects** → findings in the current gate round, with the check id as
-`authority`.
-**Confirmed correct** → `verified_against` in `bible/claim-index.yaml`, plus a
-`bible/do-not-touch.md` anchor when it is a claim someone has already tried to
-"fix". This half matters as much as the other: a verified-correct result that is
-not persisted gets re-litigated by the next pass.
-**Still surprising** → back to `deferred`, with what would settle it now.
+**Confirmed defect** → a findings file in the current gate round, check id as
+`authority`. **Confirmed correct** → `verified_against` in
+`bible/claim-index.yaml`, plus a `bible/do-not-touch.md` anchor when somebody
+already tried to "fix" it. **Still surprising** → back to `deferred`.

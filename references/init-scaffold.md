@@ -1,193 +1,156 @@
-# Init — Scaffolding a New Project
+# Init — scaffolding a new project
 
-When the skill is invoked and no `bible/meta.yaml` exists at the target path,
-init scaffolds the project directory. The human never makes folders by hand.
-
-This file specifies the one question init asks, what it creates per profile,
-and what it says to the human before and after.
+When no `bible/meta.yaml` exists at the target path, init scaffolds the
+project. The human never makes folders by hand.
 
 ## When init runs
 
-- The user asked to start a new project AND
-- either (a) named a folder that exists but has no `bible/`, (b) named a
-  folder that does not exist, or (c) named no folder (ask which folder to
-  use or create — that is phase detection, not an init question).
+The user asked to start a project and named a folder with no `bible/`, a folder
+that does not exist, or none (then ask which folder — that is phase detection,
+not an init question). If `bible/meta.yaml` exists, do NOT run init: `"3.4"`
+→ resume from `project-status.yaml`; anything else → § Earlier skill versions.
 
-If `bible/meta.yaml` exists, do NOT run init. Check its `schema_version`:
-`"3.0"` → resume from `project-status.yaml`; anything else → see "Projects
-from an earlier skill version" below.
+## The one question: the profile
 
-## The one init question: the profile
-
-Init asks exactly one thing, because exactly one thing changes which folders
-exist: **"What are you writing?"** Map the answer to one of the five
-profiles. Everything else — title, audience, tone, scope — belongs to setup;
-asking it here turns a ten-second confirmation into a form.
-
-**Propose, don't interrogate.** The user's first sentence almost always
-carries the answer. Map it, state the choice and what it implies in one
-line, and move on unless they object:
+Init asks one thing, because one thing changes which files exist: **"What are
+you writing?"** Everything else belongs to setup. Propose, don't interrogate —
+map the first sentence, state the choice and what it implies in one line, move
+on unless the human objects:
 
 | The user says something like | Profile |
 |---|---|
-| novel, story, fiction, memoir with narrative arc | `book-literary` |
-| a book about X, tutorial book, textbook, technical book to publish | `book-technical` |
+| novel, story, fiction, memoir with a narrative arc | `book-literary` |
+| a book about X, tutorial, textbook, technical book | `book-technical` |
 | internal guide, handbook, process manual, "for my company/team" | `corporate-guide` |
 | docs, docs site, knowledge base, how-to articles, runbooks | `product-docs` |
-| paper, journal/conference submission, preprint | `scientific-paper` |
+| paper, journal or conference submission, preprint | `scientific-paper` |
 
-Only ask a follow-up when the answer is genuinely ambiguous between two
-profiles, and make it the discriminating question, not a menu: "Is there a
-reading order, or does each page stand alone?" separates `book-technical`
-from `product-docs`; "Is the reader a customer or a colleague inside one
-organization?" separates `book-technical` from `corporate-guide`.
-
-Confirm using the profile's human-facing unit word (chapter / article /
-section) — this is the first moment the human hears the vocabulary the
-whole project will use.
+Only when two profiles genuinely fit, ask the discriminating question: "Is there
+a reading order, or does each page stand alone?" (`book-technical` vs
+`product-docs`); "Is the reader a customer or a colleague in one
+organization?" (`book-technical` vs `corporate-guide`). Confirm in the
+profile's unit word — the first time the human hears it.
 
 ## What init creates
 
-Base skeleton, all profiles:
+Base skeleton, every profile:
 
 ```
 <project-root>/
 ├── bible/
-│   ├── meta.yaml                 ← from templates/meta.yaml, pre-filled (below)
-│   ├── voice-profile.md          ← from templates/voice-profile.md — empty shell,
-│   │                               setup fills it; mandatory for EVERY profile
-│   ├── style-guide.md            ← empty shell, setup fills
-│   ├── scope.md                  ← empty shell
-│   ├── glossary.md               ← from templates/glossary.md
-│   ├── continuity-tracker.md     ← from templates/continuity-tracker.md
-│   ├── do-not-touch.md           ← from templates/do-not-touch.md — empty shell.
-│   │                               Where "verified correct, do not re-open"
-│   │                               lives. Create it now: a project that has to
-│   │                               invent the file later invents it after the
-│   │                               fix pass that needed it.
-│   ├── fixed-defects.yaml        ← from templates/fixed-defects.yaml — empty
-│   │                               shell (delete the example entry, KEEP the
-│   │                               header). The negative twin of do-not-touch:
-│   │                               formulations that were wrong and must not
-│   │                               return. Same reason to create it now.
-│   ├── rule-probes-tuned.yaml    ← from templates/rule-probes-tuned.yaml —
-│   │                               empty shell, KEEP the header. Fills up at
-│   │                               Phase 4.5, when the gate reports rules too
-│   │                               wide to judge in one run. Without it the
-│   │                               depth half of coverage cannot close.
-│   └── sources/                  ← empty folder (setup populates the grounding library)
-├── outline/
-│   └── units.yaml                ← schema present, no entries (Phase 2 fills)
-├── drafts/
-│   └── _archive/                 ← empty; archiving policy writes here
-├── final/                        ← empty
-├── reviews/                      ← empty; Phase 4.5 writes manuscript-gate-<date>/
-└── project-status.yaml           ← from templates/project-status.yaml, pre-filled (below)
+│   ├── meta.yaml              ← templates/meta.yaml, pre-filled (below)
+│   ├── voice-profile.md       ← templates/voice-profile.md — setup fills it
+│   ├── style-guide.md         ← templates/style-guide.md — setup fills it
+│   ├── scope.md               ← empty shell
+│   ├── glossary.md            ← templates/glossary.md
+│   ├── continuity-tracker.md  ← templates/continuity-tracker.md
+│   ├── do-not-touch.md        ← templates/do-not-touch.md (keep the header)
+│   ├── fixed-defects.yaml     ← templates/fixed-defects.yaml (delete the example, keep the header)
+│   └── sources/               ← empty; setup builds the grounding library
+├── outline/units.yaml         ← schema, no entries
+├── drafts/_archive/
+├── final/
+├── reviews/
+├── runs.tsv                   ← header row only: unit agent tier cycle timestamp_utc output_bytes
+└── project-status.yaml        ← templates/project-status.yaml, pre-filled (below)
 ```
 
-Not scaffolded, generated later, listed here so their absence is not a puzzle:
-`bible/claim-index.yaml`, `bible/concept-probes.yaml` and `bible/audit-config.yaml`
-are produced by `scripts/` at the manuscript gate (`references/claim-index.md`).
-`bible/concept-probes-tuned.yaml` is hand-written when the generated probes need
-narrowing.
+Create `do-not-touch.md` and `fixed-defects.yaml` now: a project that has to
+invent them later invents them after the fix pass that needed them.
 
-Per-profile additions and omissions:
+Per profile:
 
 | Profile | Adds | Omits |
 |---|---|---|
-| `book-technical` | `bible/knowledge-graph.yaml` (empty, Phase 1.5 fills) · `bible/examples-library.md` · `bible/digests/` | — |
-| `book-literary` | `bible/characters/` · `bible/world.md` · `bible/plot-structure.md` · `bible/arcs.md` · `bible/timeline.md` · `bible/digests/` | `knowledge-graph.yaml`, `examples-library.md` — plot-structure and arcs carry the dependency role for fiction |
-| `corporate-guide` | `bible/knowledge-graph.yaml` (terminology-only) · `bible/digests/` | `examples-library.md` — running example is off by default; setup creates the file only if it enables one |
-| `product-docs` | `bible/knowledge-graph.yaml` (terminology-only) | `bible/digests/` — modular sequence, there is no narrative memory to digest; `examples-library.md` |
-| `scientific-paper` | `bible/claims-map.yaml` (from `templates/claims-map.yaml`, empty) · `bible/knowledge-graph.yaml` · `bible/digests/` | `examples-library.md` |
+| `book-technical` | `knowledge-graph.yaml` (empty) · `examples-library.md` · `rule-probes-tuned.yaml` (header only) · `digests/` | — |
+| `book-literary` | `characters/` with `_extras.md` (← `templates/extras.md`) · `plot-structure.md` (← `templates/plot-structure.md`) · `arcs.md` (← `templates/arcs.md`) · `story-ledger.yaml` (← `templates/story-ledger.yaml`) · `reader-journal.md` (← `templates/reader-journal.md`) · `braindump.md` (empty — setup pastes the human's raw notes verbatim) · `world.md` · `timeline.md` · `digests/` | `knowledge-graph.yaml`, `examples-library.md`, `rule-probes-tuned.yaml` |
+| `corporate-guide` | `knowledge-graph.yaml` (terminology-only) · `rule-probes-tuned.yaml` · `digests/` | `examples-library.md` unless setup enables a running example |
+| `product-docs` | `knowledge-graph.yaml` (terminology-only) · `rule-probes-tuned.yaml` | `digests/`, `examples-library.md` |
+| `scientific-paper` | `claims-map.yaml` (← `templates/claims-map.yaml`) · `knowledge-graph.yaml` · `rule-probes-tuned.yaml` · `digests/` | `examples-library.md` |
+
+Character sheets are created per character during setup from
+`templates/character-sheet.md`, through `references/character-questionnaire.md`
+— never as empty placeholders, which `pipeline_step.py ready` would reject
+anyway.
+
+Generated later, listed so their absence is no puzzle:
+`bible/identifier-index.txt` (setup, nonfiction:
+`python scripts/check_identifiers.py --build-index`), `bible/claim-index.yaml`,
+`concept-probes.yaml`, `audit-config.yaml` (Phase 4.5 scripts),
+`bible/lexicon.yaml` (optional: the book's own tics and terms, added when
+someone spots them).
 
 ### meta.yaml pre-fill
 
-From `templates/meta.yaml`. Init fills only what it knows; everything else
-stays as `[placeholder]` for setup:
+Init fills only what it knows; the rest stays `[placeholder]` for setup:
 
 ```yaml
-schema_version: "3.0"
 project:
   profile: <chosen profile>
+  language_variant: <from the user's language, e.g. es-AR — confirm in setup>
 models:
   tiers: { creative: inherit, audit: inherit }
   roles: { writer: creative, critic: creative, humanizer: audit, default: audit }
+schema_version: "3.4"
 ```
 
-- `book-technical`: keep `project.subtype: "tutorial"` (refined in setup).
-  For **every other profile, delete the `subtype` key** — it is
-  book-technical-only, and a stray `subtype` on a paper or a docs project
-  contradicts the schema. Likewise, un-comment `citation_style` only for
-  `scientific-paper`.
-- `book-literary`: pre-set `roles.humanizer: creative` — voice is the
-  product there, and a default the human must remember to flip is a default
-  that ships wrong.
-- `corporate-guide`: add the `organization:` block as an empty placeholder
-  (`name`, `audience_role`, `internal_context`, `confidentiality`) so setup
-  cannot skip it — the profile's example and register rules depend on it.
+- `project.subtype` is `book-technical` only — delete it elsewhere.
+  `citation_style` is uncommented for `scientific-paper` only.
+- `book-literary`: `roles.humanizer: creative`; `pipeline.retry_cap: 3`;
+  keep the `literary:` block; delete the nonfiction regions (`target_version`,
+  `pinned_versions`, `validation_surface`).
+- Every other profile: delete the `literary:` block.
+- `corporate-guide`: add the empty `organization:` block so setup cannot skip
+  it.
 
-Never write a model ID into the scaffold. Tiers default to `inherit`; IDs
-are a cost-control decision the human makes later, in their own meta.yaml.
+Never write a model ID into the scaffold.
 
 ### project-status.yaml pre-fill
 
-From `templates/project-status.yaml`:
+`templates/project-status.yaml` with its comments, and these values:
 
 ```yaml
-schema_version: "3.0"
-project:
-  name: "[working title — setup fills]"
-  profile: <chosen profile>
-  created: <today>
-  last_updated: <today>
+schema_version: "3.4"
+project: { name: "[working title]", profile: <profile>, created: <today>, last_updated: <today> }
 phase: setup
-units: []
+current_unit: null
+outline: { approved: false, approved_on: null }   # pipeline_step.py ready reads it
+units: {}
+knowledge_graph: { last_verified: null }
+waivers: []
+manuscript_gate: { state: null }
 retries: { by_unit: {}, cap_hits: [] }
-runs: []            # orchestrator appends one line per agent run — see pipeline.md
 notes: []
 ```
 
-`phase: setup`, not `init` — by the time this file exists, init is done, and
-a status file that says `init` would make phase detection re-run the
-scaffold on the next session.
+`phase: setup`, not `init` — otherwise phase detection re-runs the scaffold.
+The runs log is `runs.tsv`, not a key here.
 
-## Post-init confirmation
+## After init
 
-Tell the human, in their language and using the profile's unit word:
-which profile was chosen and why, the tree that was created, and that the
-next step is Phase 1 (setup — a design conversation, not a form). Then
-**stop and wait for a go-ahead.** Init is separate from setup precisely so
-the human can inspect the scaffold before investing in the design session.
+Tell the human, in their language and unit word: the profile and why, the tree
+created, and that setup comes next (a design conversation, not a form). **Stop
+and wait for a go-ahead.**
 
 ## Non-empty target folder
 
-If the target path exists and contains files the skill did not create, ask
-before writing anything: use the folder as-is, or pick an empty one. Never
-overwrite or delete existing files. If the human says "use it", create only
-the missing pieces of the skeleton and record what was skipped under
-`notes:` in `project-status.yaml` — a scaffold that silently coexists with
-unknown files is a scaffold nobody can debug later.
+Files the skill did not create → ask first: use the folder as-is, or pick an
+empty one. Never overwrite or delete. If "use it", create only the missing
+pieces and record what was skipped under `notes:` in `project-status.yaml`.
 
-## Projects from an earlier skill version
+## Earlier skill versions
 
-If `bible/meta.yaml` exists but `schema_version` is missing or not `"3.0"`,
-the project predates this version of the skill. There is no automatic
-migration — a migrator that half-understands an old schema produces a
-project that half-works, which is worse than either state.
+`schema_version` missing or not `"3.4"` → the project predates this skill
+(`pipeline_step.py`, `check_story.py` and `manuscript_gate.py` refuse it, exit
+2; so does a missing or unknown `project.profile`).
+There is no automatic migration: a migrator that half-understands an old
+schema produces a project that half-works. Offer a fresh scaffold (new folder,
+or here after explicit confirmation) plus a manual carry-over:
 
-Tell the human plainly: this project was built with an earlier version;
-the current skill cannot run its pipeline against it. Offer a fresh
-scaffold (in a new folder, or here after their explicit confirmation —
-never touching existing content without it) plus a **manual carry-over**:
+- approved units and the outline carry over as approved content;
+- bible documents carry over as raw material for setup — review, don't assume;
+- `voice-profile.md`, `meta.yaml`, `project-status.yaml` — and, literary, the
+  character sheets through the questionnaire — are produced fresh: they encode
+  decisions the old project never made.
 
-- Approved/final units and the outline carry over as content — copy them in
-  and treat them as approved input.
-- Bible documents (scope, glossary, style guide, sources library, story
-  bible) carry over as raw material for setup — review, don't assume.
-- `voice-profile.md` and the current meta/status files must be produced
-  fresh in setup: they encode decisions the old project never made, and
-  defaulting them silently would skip the human sign-off they exist for.
-
-If the human declines, stop — do not run any phase against an old-schema
-project.
+If the human declines, stop.

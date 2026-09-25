@@ -59,6 +59,7 @@ except ImportError:  # pragma: no cover
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bookkit.project import add_common_args, load_project  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
 from bookkit.segment import paragraphs, segment  # noqa: E402
 from bookkit.textmetrics import fingerprint  # noqa: E402
 
@@ -202,9 +203,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[claim-index] {args.index_path} does not exist yet — nothing to "
                   f"validate. Generate it with "
                   f"`build_concept_dossier.py --emit-index`.")
+        # Still write the result. A caller that finds no output file cannot tell
+        # "no index yet" from "the validator crashed", and the gate must not guess.
+        _write_json(args.json, {"absent": True, "counts": {}, "problems": [],
+                                "moved": [], "propagate": [], "repaired": 0})
         return 0
 
-    doc = yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
+    doc = yaml.safe_load(read_text(index_path)) or {}
     result = validate(project, doc, args.fix)
 
     if args.fix and result["repaired"]:
@@ -241,11 +246,9 @@ def main(argv: list[str] | None = None) -> int:
         print("[claim-index] consistent.")
 
     if args.json:
-        out = Path(args.json)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        _write_json(args.json, result)
         if not args.quiet:
-            print(f"[claim-index] result → {out}")
+            print(f"[claim-index] result → {args.json}")
 
     # Exit 0 by default even with findings. A hard gate on prose gets switched
     # off within a week, and then there is no warning either. `--fail-on-changed`
@@ -254,6 +257,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.fail_on_changed and result["counts"].get("CHANGED"):
         return 1
     return 0
+
+
+def _write_json(path: str | None, result: dict) -> None:
+    if not path:
+        return
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True),
+                   encoding="utf-8")
 
 
 if __name__ == "__main__":

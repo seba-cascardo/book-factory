@@ -2,73 +2,93 @@
 # -*- coding: utf-8 -*-
 """Text normalization, fingerprints, and near-duplicate similarity.
 
-The similarity metric here is the single most consequential calibration in the
-whole toolkit, so the measurement that produced it is recorded inline rather
-than in a design doc that will drift away from the code.
+The similarity metric is the most consequential calibration in the toolkit; the
+measurement behind it is summarized below and told in full in
+docs/rationale/gate.md#similarity.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 
 # ---------------------------------------------------------------------------
 # Normalization and fingerprints
 # ---------------------------------------------------------------------------
 
+_CODE_SPAN = re.compile(r"`[^`]*`")
 
-def normalize(text: str) -> str:
-    """Canonical form for fingerprinting and term extraction.
 
-    Code spans go out because `Aggr()` vs `aggr()` is a style question, not a
-    different claim. Markdown marks go out because bolding a word does not
-    change what the sentence asserts.
-    """
-    t = re.sub(r"`[^`]*`", " ", text)      # code spans
-    t = re.sub(r"[*_#>|]", " ", t)         # markdown marks
+def _prose_form(text: str) -> str:
+    t = re.sub(r"[*_#>|]", " ", text)      # markdown marks
     t = re.sub(r"[^\w\s]", " ", t)         # punctuation
     return re.sub(r"\s+", " ", t).strip().lower()
 
 
-def fingerprint(text: str) -> str:
-    """Stable 12-hex id of a passage's normalized text.
+def normalize(text: str) -> str:
+    """Canonical form for TERM extraction and similarity (not for fingerprints).
 
-    This is the durable key of the claim index — not the line number. When a
-    passage MOVES the fingerprint survives and the validator repairs the line;
-    when a passage is EDITED the fingerprint disappears and every sibling gets
-    flagged. That asymmetry is the incomplete-fix detector, and the reason the
-    index cannot go stale the way a hand-ticked checklist does.
+    Code spans go out: `Aggr()` vs `aggr()` should not make two passages look
+    unrelated. Markdown marks and punctuation go out; case folds.
     """
-    return hashlib.sha1(normalize(text).encode("utf-8")).hexdigest()[:12]
+    t = unicodedata.normalize("NFC", text)
+    return _prose_form(_CODE_SPAN.sub(" ", t))
+
+
+def fingerprint_form(text: str) -> str:
+    """What a fingerprint hashes: prose folded, code spans kept VERBATIM.
+
+    A fix to `Peek(v,-1)` → `Peek(v,1)` is the most common fix in a technical book.
+    A fingerprint that dropped code spans, operators and case called that passage
+    unchanged, so the claim index never said CHANGED and the audit never
+    re-queued it. Prose still folds (a bolded word does not change a claim);
+    code does not (a sign does).
+    """
+    t = unicodedata.normalize("NFC", text)
+    parts: list[str] = []
+    last = 0
+    for m in _CODE_SPAN.finditer(t):
+        parts.append(_prose_form(t[last:m.start()]))
+        parts.append(re.sub(r"\s+", " ", m.group(0)).strip())
+        last = m.end()
+    parts.append(_prose_form(t[last:]))
+    return " ".join(p for p in parts if p)
+
+
+def fingerprint(text: str) -> str:
+    """Stable 12-hex id of a prose passage.
+
+    The durable key of the claim index — not the line number. A passage that
+    MOVES keeps its fingerprint and the validator repairs the line; a passage
+    that is EDITED loses it and every sibling gets flagged.
+    """
+    return hashlib.sha1(fingerprint_form(text).encode("utf-8")).hexdigest()[:12]
+
+
+def fingerprint_code(body: str) -> str:
+    """Stable id of a code block: whitespace collapsed, everything else verbatim."""
+    t = re.sub(r"\s+", " ", unicodedata.normalize("NFC", body)).strip()
+    return hashlib.sha1(t.encode("utf-8")).hexdigest()[:12]
+
+
+def text_hash(text: str) -> str:
+    """Hash of a whole text (the manuscript), for MG-3/MG-4/MG-C subjects."""
+    return hashlib.sha1(unicodedata.normalize("NFC", text).encode("utf-8")).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------
 # Similarity
 # ---------------------------------------------------------------------------
 #
-# MEASURED (2026-07-30, 18-chapter technical book, ~156k words). The obvious
-# design — 8-word shingles with Jaccard >= 0.8 — finds ZERO clusters on real
-# prose. The three twin passages of a known incomplete fix scored 0.037, 0.000
-# and 0.000 against each other. A well-written book REPHRASES instead of
-# repeating, so n-gram overlap is nil even when the claim is identical.
-#
-# What does separate is Jaccard over content terms with stopwords removed:
-#     real twins        0.111 – 0.359
-#     random pairs      median 0.038, p95 0.103, p99 0.154, max 0.291
-#
-# The separation is imperfect on purpose, and worth stating: the weakest true
-# twin (0.111) falls between the p95 and the p99 of the noise. Hence a LOW
-# threshold, and hence the cluster is a SIGNAL FOR THE AUDITOR, never a verdict.
-# A false positive costs one extra pair to read; a false negative loses the
-# defect entirely. Those are not symmetric, so the threshold leans toward noise.
+# MEASURED on an 18-chapter technical book: n-gram shingles find ZERO clusters on
+# real prose (a good book rephrases). Jaccard over content terms separates:
+# real twins 0.111–0.359; random pairs p95 0.103, p99 0.154. Hence a LOW
+# threshold, and the pair is a SIGNAL for the auditor, never a verdict.
 
 RELATED_THRESHOLD = 0.12
 RELATED_TOP_K = 5
 
-# English stopwords. `stopwords_for()` resolves the right set from the project's
-# `language_variant`; anything not listed falls back to English, which is a safe
-# degradation — an unfiltered stopword just adds a constant to both sides of the
-# Jaccard and slightly compresses the range.
 STOPWORDS_EN = set("""
 a an the is are was were be been being of in on at to for with by from as it its
 this that these those and or but not no if then than so such there here you your
@@ -88,29 +108,18 @@ ese esa eso aquel aquella más menos muy también sólo solo todo toda todos tod
 otro otra cada algún alguna ya aún tras ante bajo durante mediante
 """.split())
 
-_STOPWORDS_BY_LANG = {
-    "en": STOPWORDS_EN,
-    "en-us": STOPWORDS_EN,
-    "en-gb": STOPWORDS_EN,
-    "es": STOPWORDS_ES,
-    "es-ar": STOPWORDS_ES,
-    "es-es": STOPWORDS_ES,
-}
+_STOPWORDS_BY_LANG = {"en": STOPWORDS_EN, "es": STOPWORDS_ES}
 
 
-def stopwords_for(language_variant: str | None) -> set[str]:
-    """Stopword set for a project's `meta.yaml → conventions.language_variant`.
+def stopwords_for(language_variant: str | None, extra: list[str] | None = None) -> set[str]:
+    """Stopwords for a language variant, plus a language pack's `stopwords`.
 
-    Unknown variants get English rather than an empty set: an empty set makes
-    every pair look similar (articles and prepositions dominate the term
-    overlap), which floods the auditor with noise pairs.
+    Unknown languages get English rather than an empty set: an empty set makes
+    every pair look similar and floods the auditor with noise.
     """
-    if not language_variant:
-        return STOPWORDS_EN
-    key = str(language_variant).strip().lower()
-    if key in _STOPWORDS_BY_LANG:
-        return _STOPWORDS_BY_LANG[key]
-    return _STOPWORDS_BY_LANG.get(key.split("-")[0], STOPWORDS_EN)
+    key = str(language_variant or "en").strip().lower().replace("_", "-").split("-")[0]
+    base = set(_STOPWORDS_BY_LANG.get(key, STOPWORDS_EN))
+    return base | {str(w).lower() for w in (extra or []) if isinstance(w, str)}
 
 
 def content_terms(text: str, stopwords: set[str] | None = None) -> set[str]:
@@ -123,54 +132,3 @@ def jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)
-
-
-def shingles(text: str, k: int = 8) -> set[str]:
-    """K-word shingles. Kept for diagnostics only — see the calibration note
-    above for why this is NOT the similarity metric. Useful when you want to
-    demonstrate to someone that verbatim repetition is not what you are looking
-    for."""
-    w = normalize(text).split()
-    if len(w) < k:
-        return {" ".join(w)} if w else set()
-    return {" ".join(w[i:i + k]) for i in range(len(w) - k + 1)}
-
-
-def related_pairs(texts: list[str],
-                  stopwords: set[str] | None = None,
-                  threshold: float = RELATED_THRESHOLD,
-                  top_k: int = RELATED_TOP_K
-                  ) -> tuple[list[tuple[float, int, int]], dict[int, list[tuple[float, int]]]]:
-    """Similarity graph over passages.
-
-    Returns (pairs sorted by score desc, top-K neighbours per index).
-
-    PAIRS, not connected components. With a threshold this low the transitive
-    closure collapses a whole chapter into one 30-passage "cluster", which tells
-    an auditor nothing. A pair does: "these two make the same claim, and one was
-    touched in a fix run and the other wasn't" is directly actionable.
-    """
-    terms = [content_terms(t, stopwords) for t in texts]
-    n = len(texts)
-    neighbours: dict[int, list[tuple[float, int]]] = {i: [] for i in range(n)}
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            s = jaccard(terms[i], terms[j])
-            if s >= threshold:
-                neighbours[i].append((s, j))
-                neighbours[j].append((s, i))
-
-    for i in range(n):
-        neighbours[i] = sorted(neighbours[i], reverse=True)[:top_k]
-
-    pairs: list[tuple[float, int, int]] = []
-    seen: set[tuple[int, int]] = set()
-    for i in range(n):
-        for s, j in neighbours[i]:
-            key = (min(i, j), max(i, j))
-            if key not in seen:
-                seen.add(key)
-                pairs.append((s, key[0], key[1]))
-    pairs.sort(reverse=True)
-    return pairs, neighbours

@@ -1,0 +1,28 @@
+# Fixture — small literary project (Spanish, rioplatense, raya dialogue).
+schema_version: "3.4"
+project:
+  profile: "book-literary"
+  title: "La hora de la siesta"
+  language: "es"
+  language_variant: "es-AR"
+structure:
+  unit_length_target_words: 450
+literary:
+  seeds:
+    title: "La hora de la siesta"
+    premise: "Dos hermanos vacían la casa de su madre en Pichincha y encuentran la libreta donde ella anotaba apuestas a escondidas."
+    only_in_this_book:
+      - "la libreta de tapas verdes con números de quiniela anotados en lápiz"
+      - "el ventilador de techo que hace clic cada tres vueltas"
+      - "el perro de la vecina que ladra solo cuando pasa el 115"
+      - "la radio Spica con la perilla pegada con cinta aisladora"
+      - "el olor a naftalina del placard del pasillo"
+  min_seeds: 5
+  human_calibration_passages: 1
+  fact_check: realistic
+  reader_profile: holistic
+  key_scene_versions: 2
+  tic_pass_every: 3
+models:
+  tiers: {creative: inherit, audit: inherit}
+  roles: {writer: creative, critic: creative, humanizer: creative, default: audit}

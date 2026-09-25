@@ -1,0 +1,23 @@
+# bible/story-ledger.yaml — Foreshadow–Trigger–Payoff ledger (book-literary).
+# Every plant, promise, mystery and Chekhov object the book sets up, with its
+# planned payoff. Seeded at setup, completed in Phase 2 (every entry has a
+# payoff_unit <= ending.final_unit; check_story.py: LEDGER-NO-PAYOFF). Scene
+# cards reference ids in `ledger: {plants, pays}`; an id not listed here is
+# LEDGER-UNKNOWN (blocks `ready`). CG Mode B marks payoffs
+# (`status: paid`, `paid_in`) and reports unlisted plants; only the human adds
+# entries or sets `deliberately-ambiguous` (with a note). At the manuscript
+# gate an entry still `open` is LEDGER-OPEN. The file must exist (LEDGER-MISSING
+# otherwise; `entries: []` when nothing is planted yet), and every entry must be
+# well formed (LEDGER-INVALID otherwise): `status` is one of the three below,
+# `what` and `trigger` are real text (not TBD, N/A, x…), and `paid` names in
+# `paid_in` a unit that exists. Delete the example entry.
+entries:
+  - id: F01
+    kind: foreshadow       # foreshadow | promise | mystery | chekhov
+    planted_in: unit-02
+    what: ""
+    trigger: ""
+    payoff_unit: unit-09   # planned
+    status: open           # open | paid | deliberately-ambiguous
+    paid_in: null
+    note: ""               # optional; required for deliberately-ambiguous

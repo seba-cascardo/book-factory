@@ -9,7 +9,12 @@ run mechanically; concordance, broken sentences and real typos stay with the
 Proofreader agent.
 
 Prose only. Fenced blocks are excluded, because `colour` inside a field name and
-`1000` inside code are not errors.
+`1000` inside code are not errors. Table rows skip the whitespace rules (aligned
+columns are not double spaces).
+
+Language-aware: the spelling-variant tables and the em-dash rule are English
+conventions. A Spanish book gets neither — the raya is dialogue punctuation with
+its own orthography — and 4-digit numbers carry no separator (RAE).
 
 Config: `bible/lint-config.yaml` when present (see templates/lint-config.yaml).
 With no config the script still runs — spelling variants and whitespace rules
@@ -33,8 +38,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bookkit.project import add_common_args, load_project, Project  # noqa: E402
+from bookkit.project import add_common_args, as_list, load_project, Project  # noqa: E402
 from bookkit.segment import segment  # noqa: E402
+from bookkit.textio import read_text  # noqa: E402
 
 # --- Spelling variants. Keyed by the variant the project pinned AGAINST. -----
 # These are inert unless `language_variant` says which side is wrong, so a
@@ -65,7 +71,8 @@ US_TO_GB = {
     r"\bdialog box\b": "dialogue box", r"\blicense\b": "licence (noun)",
 }
 
-RX_EMDASH_TIGHT = re.compile(r"\S—|—\S")
+RX_EMDASH_TIGHT = re.compile(r"\S—|—\S")      # dash_style: spaced
+RX_EMDASH_SPACED = re.compile(r"\s—|—\s")     # dash_style: closed ("no spaces")
 RX_THOUSANDS = re.compile(r"(?<![\d.,])\d{4,}(?![\d.,%])")
 RX_DOUBLE_SPACE = re.compile(r"(?<=\S)  +(?=\S)")
 RX_SPACE_BEFORE_PUNCT = re.compile(r"\s+[,.;:!?](?=\s|$)")
@@ -101,6 +108,7 @@ class Config:
     allow: list[str] = None
     sentence_case_headings: bool = True
     thousands_separator: bool = True
+    dash_style: str = ""        # "spaced" | "closed" | "" (no em-dash rule)
 
     def __post_init__(self):
         self.pins = self.pins or []
@@ -108,18 +116,31 @@ class Config:
         self.allow = self.allow or []
 
 
+def parse_dash_style(value) -> str:
+    """`conventions.dash_style` → "spaced" | "closed" | "" (unset: no rule)."""
+    v = str(value or "").lower()
+    if not v:
+        return ""
+    if "no space" in v or "unspaced" in v or "closed" in v or "tight" in v:
+        return "closed"
+    return "spaced" if "space" in v else ""
+
+
 def load_config(project: Project) -> Config:
     raw = project.load_yaml("bible/lint-config.yaml")
+    heading_case = str(project.get("conventions.heading_case", "sentence") or "sentence")
     cfg = Config(
-        language_variant=str(raw.get("language_variant")
-                             or project.language_variant or "en-US"),
-        pins=list(raw.get("pins") or []),
-        casing_watch=list(raw.get("casing_watch") or []),
-        allow=list(raw.get("allow") or []),
-        sentence_case_headings=bool(raw.get("sentence_case_headings", True)),
+        language_variant=str(raw.get("language_variant") or project.language_variant),
+        pins=as_list(raw.get("pins")),
+        casing_watch=[str(t) for t in as_list(raw.get("casing_watch"))],
+        allow=[str(a) for a in as_list(raw.get("allow"))],
+        sentence_case_headings=bool(raw.get("sentence_case_headings",
+                                            heading_case.lower().startswith("sentence"))),
         thousands_separator=bool(raw.get("thousands_separator", True)),
+        dash_style=parse_dash_style(raw.get("dash_style")
+                                    or project.get("conventions.dash_style")),
     )
-    for entry in raw.get("forbidden") or []:
+    for entry in as_list(raw.get("forbidden")):
         cfg.pins.append({
             "pattern": rf"\b{re.escape(str(entry.get('term', '')))}\b",
             "prefer": entry.get("prefer", ""),
@@ -141,7 +162,7 @@ def derive_casing_watch(project: Project) -> list[str]:
     if not path.exists():
         return []
     terms: set[str] = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in read_text(path).splitlines():
         for rx in GLOSSARY_TERM_RES:
             m = rx.match(line)
             if not m:
@@ -167,9 +188,17 @@ def strip_code_spans(text: str) -> str:
 def lint(project: Project, cfg: Config) -> list[Finding]:
     out: list[Finding] = []
     allow = [re.compile(p, re.I) for p in cfg.allow]
-    variant = cfg.language_variant.strip().lower()
-    spelling = US_TO_GB if variant.startswith("en-gb") else (
-        GB_TO_US if variant.startswith("en") else {})
+    variant = cfg.language_variant.strip().lower().replace("_", "-")
+    english = variant.split("-")[0] == "en"
+    spelling = US_TO_GB if variant.startswith("en-gb") else (GB_TO_US if english else {})
+    # English only: the raya in other languages is dialogue punctuation with its
+    # own orthography, and counting it as an em-dash flagged 24/24 dialogue lines.
+    dash_rx = ({"spaced": RX_EMDASH_TIGHT, "closed": RX_EMDASH_SPACED}.get(cfg.dash_style)
+               if english else None)
+    dash_hint = {"spaced": "spaces on both sides",
+                 "closed": "no spaces around the em-dash"}.get(cfg.dash_style, "")
+    # RAE: 4-digit numbers take no separator in Spanish; English separates from 1,000.
+    min_digits = 4 if english else 5
     pins = [(re.compile(p["pattern"]), p.get("prefer", ""), p.get("why", "style pin"))
             for p in cfg.pins if p.get("pattern")]
 
@@ -205,12 +234,13 @@ def lint(project: Project, cfg: Config) -> list[Finding]:
                     out.append(Finding("pin", r.unit, loc, m.group(0),
                                        f"{prefer} ({why})" if prefer else why))
 
-            if RX_EMDASH_TIGHT.search(bare):
-                out.append(Finding("em_dash", r.unit, loc,
-                                   _ctx(bare, RX_EMDASH_TIGHT), "spaces on both sides"))
+            if dash_rx and dash_rx.search(bare):
+                out.append(Finding("em_dash", r.unit, loc, _ctx(bare, dash_rx), dash_hint))
 
             if cfg.thousands_separator:
                 for m in RX_THOUSANDS.finditer(bare):
+                    if len(m.group(0)) < min_digits:
+                        continue
                     # Years carry no thousands separator: on the calibration run
                     # 111 of 111 first-pass hits were "2024" / "2025".
                     if 1900 <= int(m.group(0)) <= 2100:
@@ -224,8 +254,9 @@ def lint(project: Project, cfg: Config) -> list[Finding]:
                                        "thousands separator"))
 
             # Whitespace rules run on ORIGINAL text. Indented blockquotes are
-            # quoted code, not prose.
-            if not (r.kind == "quote" and re.match(r"^>\s{2,}\S", r.text)):
+            # quoted code, and table rows are aligned on purpose.
+            if r.kind != "table" and not (r.kind == "quote"
+                                          and re.match(r"^>\s{2,}\S", r.text)):
                 for rx, name, sug in (
                     (RX_DOUBLE_SPACE, "double_space", "single space"),
                     (RX_SPACE_BEFORE_PUNCT, "space_punct", "no space before punctuation"),
@@ -324,6 +355,7 @@ def main(argv: list[str] | None = None) -> int:
         out.write_text(json.dumps({
             "tool": "lint_style",
             "language_variant": cfg.language_variant,
+            "dash_style": cfg.dash_style,
             "casing_watch": cfg.casing_watch,
             "findings": [asdict(h) for h in hits],
         }, indent=2, ensure_ascii=False), encoding="utf-8")
