@@ -38,7 +38,7 @@ Hold this as an invariant alongside the Phase 3 ones:
 
 ---
 
-## The six checks
+## The seven checks
 
 | id | Question | Engine | Blocking |
 |---|---|---|---|
@@ -49,9 +49,12 @@ Hold this as an invariant alongside the Phase 3 ones:
 | **MG-5** Render lint | Does the source render as the author meant it to? | `scripts/lint_render.py` | yes (critical) |
 | **MG-6** Executable code | Did the code run, or is the debt declared? | `scripts/manuscript_gate.py` + waivers | yes |
 
-MG-5 and MG-6 are deterministic and cost seconds. MG-1 through MG-4 cost agent
-runs, which is why rounds after the first are incremental (see § The convergence
-loop).
+| **MG-7** Fixed-defect regression | Did a defect that was already fixed come back? | `scripts/check_fixed_defects.py` | yes (critical) |
+
+MG-5, MG-6 and MG-7 are deterministic, cost seconds, and always run over the
+whole book. MG-1 through MG-4 cost agent runs, which is why they carry a quota,
+why rounds after the first are incremental (see § The convergence loop), and why
+**how much of them ran is a term of the verdict** (see § Coverage).
 
 ### MG-1 — Concept audit
 
@@ -141,6 +144,137 @@ it must not do is get asserted anyway because verifying it was inconvenient.
 Not every project has a reality to check against. A novel does not; a
 philosophical essay's claims are not that kind of claim. The trigger is narrow:
 *the pipeline could not settle it, and a defined observation would.*
+
+### MG-7 — A fixed defect must not come back
+
+`bible/do-not-touch.md` protects text that is **correct**. `scripts/selftest.py`
+tests the **scripts**. Until v3.2 nothing asserted *"this defective formulation
+must not return"*.
+
+Evidence: closing one defect on the reference book — a chapter collapsing the
+three positions of a set modifier into two slots, which took **four independent
+passes** to detect — required inverting a gate assertion by hand and adding
+content pins to a linter, because nothing otherwise stopped the wrong mental
+model from reappearing in a later edit.
+
+`bible/fixed-defects.yaml` records, per fixed defect, patterns that may not
+reappear. `scripts/check_fixed_defects.py` runs it in the deterministic sweep,
+whole book, every round. A reappearance defaults to `critical`: a defect that
+cost four passes to find does not get to re-enter quietly.
+
+**Pin the claim, not the code.** The text that corrects a defect usually quotes
+the defective form in order to teach against it. The reference fix reads,
+verbatim:
+
+> *"…with the set inside the outer aggregation's own parens — only the outer sees
+> it… That is the one that looks like the fix and is not."*
+
+A literal pin on that expression fires on the fix itself, every round, forever —
+and a check that shouts when nothing happened is a check somebody switches off.
+The right pin is the conceptual frame (`two slots`, `the outer aggregation's
+reach`), which can only reappear if somebody reintroduced the wrong model. The
+`allow_in` anchors are the escape hatch for the cases where claim and
+counter-example genuinely share wording, not a substitute for pinning well.
+
+**Lifecycle.** An entry is born when a `critical` or `major` finding is marked
+resolved. The gate **proposes** it in the human packet; the human writes and
+accepts it, because getting the pattern right needs the judgement above and a
+machine that guesses produces a check that cries wolf on the fix. An entry never
+expires: if the book changes version and the rule stopped applying, delete it
+explicitly with a reason, the way a waiver is retired.
+
+See `templates/fixed-defects.yaml`.
+
+---
+
+## Coverage — how much of the surface was actually looked at
+
+MG-1 and MG-2 carry quotas (`top_concepts`, `top_rules`). Until v3.2 the verdict
+was `f(findings)` and knew nothing about them, so a book could reach `PASS` →
+`phase: complete` having audited **30 of 474 candidate rules** — and the "two
+consecutive quiet rounds" criterion was satisfied *by construction*, because
+rounds 2+ re-audited the same 30 and could not produce anything new. The quota
+was documented as a cost dial and behaved as a permanent ceiling.
+
+Three places already told the truth about this at dossier level — the rule
+auditor's *"do not conclude the rule is clean"*, the findings schema's *"a
+sampled run may never be reported as clean"*, the report template's copy of the
+same line. The verdict did not know. Now it does.
+
+### Two axes, and they are separate terms of the verdict
+
+**Breadth** is `covered / eligible_candidates` — how many subjects anybody
+opened. **Depth** is how many of those were judged from a SAMPLE of themselves
+rather than all of them: a rule with more instances than an agent can judge in
+one run (`tractable: false`), a concept dossier whose home unit was trimmed.
+
+They are separate because they close by different work:
+
+| | closes by | who does it | waiver |
+|---|---|---|---|
+| **Breadth** | spending rounds — the emitters drain the pool automatically | nobody, it happens | `manuscript_gate.coverage` |
+| **Depth** | narrowing a subject so it fits in one run | a human, it is judgement | `manuscript_gate.depth` |
+
+Requiring both for `PASS` was v3.2's mistake, and it was the same mistake this
+document warns about two sections down: **221 of 454 rules on the reference book
+were over the tractability ceiling**, and `tractable` was derived purely from
+`len(instances)` with no override. So `sampled == 0` could never hold however
+many rounds anyone ran, `PASS` was unreachable by construction, and every project
+would have ended at a standing depth waiver. A criterion nobody can satisfy
+decays exactly like a percentage floor nobody defends.
+
+### The ladder out of the depth axis
+
+An escape hatch nobody can find is not an escape hatch. Both scripts said *"the
+fix is a hand-written probe"* while `bootstrap_probes.py` and
+`concept-probes-tuned.yaml` existed only for concepts — the instruction pointed
+at something that did not exist for rules.
+
+- **MG-2** — `bible/rule-probes-tuned.yaml`. Narrow a rule's `key_terms`, add
+  `require_terms`, scope it to `scope_units` / `scope_heading`, exclude
+  instances by pattern, or `split` one broad rule into scoped sub-rules. See
+  `templates/rule-probes-tuned.yaml`.
+- **MG-1** — `home_cap` on the probe in `bible/concept-probes-tuned.yaml`, or a
+  tighter `include` / `exclude`.
+
+The gate writes the worklist: every intractable rule, ranked by instance count,
+with a commented stub each, to `round-N/rule-probes-proposed.yaml`. Starting from
+a blank file is how an affordance goes unused.
+
+**Narrowing is a claim about a subject's SCOPE, and it is auditable.** If a rule
+genuinely governs 87 code blocks across nine chapters, do not shrink it to make a
+number go down — leave it sampled and waive the depth. Waiving is the honest
+outcome; a narrowing written to reach `PASS` is a lie the gate then repeats back
+as a clean bill of health.
+
+Two definitions are fixed and do not move:
+
+- **`eligible_candidates` is post-filter, not raw.** It counts what survives
+  `--min-instances`, `--df-ceiling`, the imperative/voice discard and the
+  `--min-units` span floor. Noise in the denominator inflates the percentage, and
+  it inflates in the comfortable direction.
+- **A subject with no findings file was not audited.** An auditor that ran and
+  found nothing still writes a file with an empty `findings` array; that file is
+  the only evidence anybody looked. Counting a dispatched-but-unfiled subject as
+  covered would make the whole measurement decorative.
+
+### Where it lives
+
+```
+reviews/manuscript-gate-<date>/
+├── audited.yaml                    # CUMULATIVE ledger: subject id + fingerprint
+└── round-N/
+    ├── coverage-MG-1.json          # written by build_concept_dossier.py
+    ├── coverage-MG-2.json          # written by extract_rule_candidates.py
+    ├── rule-probes-proposed.yaml   # ranked worklist of rules that can only be
+    │                               # SAMPLED — the ladder out of PASS-SAMPLED
+    └── coverage-summary.md         # COMPUTED report header + What-ran table
+```
+
+`coverage-summary.md` is pasted into `REPORT.md`. It is generated rather than
+written because v3.1's Sampling line was prose an agent filled in, which made the
+honest number depend on the agent remembering — the exact mechanism the waivers
+section exists to eliminate.
 
 ---
 
@@ -302,10 +436,20 @@ That is what stops the next round from rediscovering them.
 Computed, not chosen — same principle as the Critic's scorecard:
 
 ```
-if any critical finding is unresolved and not waived:   BLOCKED
-elif any major finding is unresolved and not waived:    NEEDS-REVISION
-else:                                                   PASS
+blocking = a critical finding is unresolved and not waived
+major_open = a major finding is unresolved and not waived
+breadth_complete = for EVERY enabled semantic check: covered == eligible_candidates
+depth_complete   = for EVERY enabled semantic check: sampled == 0
+
+if blocking:               BLOCKED
+elif major_open:           NEEDS-REVISION
+elif not breadth_complete: PASS-PARTIAL     # subjects nobody opened
+elif not depth_complete:   PASS-SAMPLED     # subjects read only in part
+else:                      PASS
 ```
+
+Breadth outranks depth because *"nobody opened it"* is a worse state than *"we
+read part of it"*, and because the two need different work from different people.
 
 A finding is **resolved** when it was fixed and re-verified in a later round, or
 rejected as not-a-defect by the human, or waived with a recorded reason.
@@ -315,6 +459,48 @@ decides.
 `BLOCKED` makes `phase: complete` unreachable. `NEEDS-REVISION` is waivable by the
 human with a rationale in `project-status.yaml → waivers` — never silently.
 
+### Why each criterion is binary and not a percentage floor
+
+A floor like `0.80` invites arguing the number, and the day the number is
+expensive it gets waived out of habit — the same decay as a hard gate on prose. A
+binary criterion is not arguable. `PASS` means *"all of it was looked at, all the
+way"*; the two partial states each name exactly what is short and list it.
+Nobody has to defend a percentage.
+
+The corollary, learned the expensive way in v3.2: **a binary criterion needs a
+ladder.** Binary plus unreachable is not rigour, it is a gate that everyone
+routes around. That is why depth is its own term with its own way out.
+
+### What the partial states do and do not block
+
+**They do not block the work. They block the claim.** A partially audited book is
+a legitimate state; a clean bill of health over the part nobody read is not.
+
+`phase: complete` requires `PASS`, or a waiver in `project-status.yaml → waivers`
+for **each axis that is short**, carrying the exact numbers:
+
+```yaml
+waivers:
+  - check: manuscript_gate.coverage          # BREADTH — should feel expensive
+    reason: "18-chapter book, MG-2 quota held at 30/round by budget; three more
+             rounds planned post-launch"
+    debt: "444 rule candidates unaudited as of round 3"
+    signature: "MG-1:40/169|MG-2:60/474|MG-3:12/12|MG-4:1/1"
+
+  - check: manuscript_gate.depth             # DEPTH — often the honest answer
+    reason: "14 rules genuinely govern the whole load-script surface"
+    debt: "14 of 60 audited rules judged from a sample; listed in REPORT.md"
+    signature: "MG-1:0s/40|MG-2:14s/60|MG-3:0s/12|MG-4:0s/1"
+```
+
+The gate prints both signatures; paste them. A waiver whose signature no longer
+matches is reported as **stale and does not count** — a waiver that outlives its
+own facts is the failure this gate spends its design budget preventing.
+
+They are separate waivers because they are different debts. Breadth means nobody
+looked, and it closes by itself if you spend rounds. Depth means the subject is
+wider than one agent run, which is sometimes just true.
+
 ---
 
 ## The convergence loop
@@ -323,10 +509,11 @@ The gate iterates. One pass is not a gate, it is a report.
 
 ```
 Round N
-  1. Deterministic sweep, ALWAYS COMPLETE      MG-5, validate_claim_index, MG-6
+  1. Deterministic sweep, ALWAYS COMPLETE      MG-5, claim index, anchors,
+                                               MG-6, MG-7
   2. Semantic sweep                            MG-1..MG-4
-       Round 1: the whole book
-       Round 2+: only the propagation set (below)
+       Round 1: the whole book, up to the quota
+       Round 2+: the propagation set, PLUS the next unaudited slice (below)
   3. Adversarial verification of every critical/major finding
   4. Report + human packet — fixes are PROPOSED, never applied
   5. Human accepts / rejects / waives each finding
@@ -337,15 +524,21 @@ Round N
 
 ### Convergence criterion
 
-The gate closes when **both** hold:
+The gate closes when **all** hold:
 
 1. Zero unresolved `critical` and zero unresolved `major`.
 2. **Two consecutive rounds with no new `critical` or `major` findings.**
+3. `PASS`, or a signature-matching waiver for each coverage axis that is short.
 
 One clean round is not evidence. Finder agents miss things, and the defect tail
 is long — this is the loop-until-dry pattern, and the second round is where it
 earns its cost. Configure with `manuscript_gate.rounds_without_new_to_close`
 (default 2).
+
+Criterion 3 is what keeps criterion 2 honest. **Two quiet rounds at the same
+coverage are not two quiet rounds — they are one round run twice.** The round
+history table in the report carries a coverage column for exactly this: it has to
+grow between rows, or the loop is converging on its own blind spot.
 
 Note what is *not* the criterion: "no issues at all". That is unreachable —
 minors and cosmetics always remain — and promising it produces a gate someone
@@ -353,12 +546,30 @@ turns off. Say what is true instead: no blocking defects, and two quiet rounds.
 
 ### Incremental rounds
 
-Round 1 audits the whole book. From round 2 the semantic sweep runs only over:
+Round 1 audits the whole book, up to the quota. From round 2 the semantic sweep
+runs over:
 
 - passages edited since the last round,
 - **their propagation set** from `bible/claim-index.yaml` — this is what
   `PROPAGATE` is for,
-- concepts and rules with findings still open.
+- concepts and rules with findings still open,
+- **the next `top_rules` / `top_concepts` UNAUDITED candidates, by ranking.**
+
+That last line is what makes the quota a cost dial instead of a ceiling. Without
+it the unselected candidates fall into none of the first three categories, are
+never audited, therefore never produce a finding, and "two consecutive quiet
+rounds" is satisfied by construction.
+
+The mechanism is `reviews/manuscript-gate-<date>/audited.yaml`: a cumulative
+ledger keyed by subject id **and fingerprint**. The emitters skip what it already
+records — those stay in the denominator, they only leave the pool — so coverage
+grows monotonically and a project that wants a true `PASS` reaches it by spending
+rounds, which is an explicit budget decision rather than an invisible ceiling.
+
+The fingerprint spans everything an audit of that subject read: the rule sentence
+plus its instances, all of a concept's passages. So a subject whose text was
+edited since it was audited comes **back into the pool** — the same asymmetry the
+claim index uses, applied to the ledger.
 
 The deterministic sweep always runs complete. It costs seconds and it is the one
 that catches collateral damage from a fix — an edit that fixed a contradiction
@@ -366,6 +577,45 @@ and broke a table.
 
 Without incremental rounds the loop is unaffordable and gets cut to one pass,
 which puts you back where you started.
+
+### Anchors — references that survive an edit somewhere else
+
+MEASURED, during one day of fixes on the reference book: the extractor's gate
+broke **three times, and two of those were caused by ADDING a section**, not by a
+defect. Everything below an insertion shifts, every line-keyed reference goes
+stale at once, and the output is noise. A gate that shouts when nothing happened
+gets switched off within a week.
+
+The claim index already solved this for passages, with fingerprints. Everything
+else that names a passage now carries an **anchor** — a short verbatim substring
+— next to the line number:
+
+```json
+{"location": "final/ch-11.md:220",
+ "anchor": "or in the outer aggregation's parens before the"}
+```
+
+Resolution, and why the second case is the one that matters:
+
+```
+1. the line resolves and the anchor is there       OK
+2. the anchor is nowhere in the file               EDITED — the passage was CHANGED
+3. the anchor is elsewhere, exactly once           DRIFT — it MOVED; repairable
+4. the anchor matches more than once               AMBIGUOUS — lengthen it
+```
+
+A line number cannot distinguish *"it moved"* from *"they changed it"*, and those
+need opposite responses: one is bookkeeping, the other means the thing the
+reference protected may be gone.
+
+`scripts/resolve_anchors.py` reports all four, runs in the deterministic sweep,
+and `--heal` rewrites stale line numbers from the anchors after a fix pass —
+without which keeping references true is recurring manual work and therefore does
+not happen. `--heal` deliberately never touches an `EDITED` reference: repairing
+one would quietly attach a verified-correct anchor to text nobody checked.
+
+Findings already require a verbatim `quote`, so most references anchor
+themselves; `bible/do-not-touch.md` entries carry an explicit `**Anchor:**` line.
 
 ### Anti-thrash: the loop's memory
 
@@ -427,16 +677,37 @@ misses, leave it in the gate's list flagged as a known gap. Do not delete it to
 make the gate green. **A recorded gap is debt; a deleted gap is forgotten**, and
 the next person to touch the check will rediscover it from scratch.
 
+**A binary criterion needs a ladder.** Binary beats a percentage floor because
+nobody can argue it down — but binary plus *unreachable* is worse than a floor,
+because a criterion nobody can satisfy is one everybody routes around. v3.2
+required `sampled == 0` for `PASS` while `tractable` was derived purely from
+`len(instances)` with no override; on the reference book 221 of 454 rules were
+over the line, so `PASS` could never be reached and the waiver would have become
+permanent. The test to apply before shipping any hard criterion: **name the
+specific work that moves it from false to true, and check that a person can
+actually do that work.** If you cannot name it, you have written a percentage
+floor with extra steps.
+
 ## Artifacts
 
 ```
 reviews/manuscript-gate-<YYYY-MM-DD>/
 ├── GROUNDING.md              # passed verbatim to every auditor — see below
+├── audited.yaml              # CUMULATIVE ledger: what each check has audited,
+│                             # keyed by subject id + fingerprint
+├── state.json                # per-round verdict, convergence and COVERAGE
 ├── round-1/
 │   ├── findings/             # one JSON per auditor run (gate-findings.schema.json)
+│   │                         # including clean runs — the file IS the coverage
 │   ├── dossiers/             # MG-1 concept dossiers
 │   ├── rules/                # MG-2 rule candidates
+│   ├── coverage-MG-1.json    # eligible / selected / sampled / ranked cut list
+│   ├── coverage-MG-2.json
+│   ├── rule-probes-proposed.yaml   # the depth worklist, ranked
+│   ├── coverage-summary.md   # COMPUTED report header + What-ran table — paste it
 │   ├── lint-render.json      # MG-5
+│   ├── fixed-defects.json    # MG-7
+│   ├── anchors.json          # anchor resolution across findings + do-not-touch
 │   ├── claim-index.json      # validator output
 │   └── REPORT.md             # templates/manuscript-gate-report.md
 ├── round-2/ …
@@ -467,8 +738,11 @@ python scripts/manuscript_gate.py --round 1
 # Deterministic checks only — fast, run this any time
 python scripts/manuscript_gate.py --deterministic-only
 
-# Later rounds: the script computes the propagation set for you
+# Later rounds: propagation set + the next unaudited slice of the pool
 python scripts/manuscript_gate.py --round 2
+
+# After a fix pass: repair the line numbers of everything anchored
+python scripts/resolve_anchors.py --heal
 
 # Retrofit over a book this skill never scaffolded
 python scripts/manuscript_gate.py --root /path/to/book --units "final/ch-*.md" --round 1
@@ -495,8 +769,16 @@ pipeline:
       MG-4: true
       MG-5: true
       MG-6: true
+      MG-7: true                   # fixed-defect regression
     concept_min_units: 2           # audit concepts spanning at least this many units
+    top_concepts: 40               # ~170-230k tokens x passes_per_subject EACH
+    top_rules: 30                  # ~170-230k tokens x passes_per_subject EACH
 ```
+
+The cost sits on the same line as the dial on purpose. Measured on the reference
+book, one lens run costs 170–230k tokens and 10–16 minutes, so `top_rules: 30`
+with `passes_per_subject: 2` is roughly **12M tokens for MG-2 alone**. That is a
+decision, and it should not be discovered afterwards.
 
 Turning a check off requires a `waivers` entry in `project-status.yaml` naming
 who waived it and why. A check silently disabled in config is how the deferred
@@ -509,5 +791,7 @@ agents disappeared for three months.
 - `references/agents/rule-auditor.md` — MG-2, MG-3
 - `references/agents/reader-pov.md` § Whole-book mode — MG-4
 - `references/validation-surface.md` and `references/verification-plan.md` — MG-6
+- `templates/fixed-defects.yaml` — MG-7, and the "pin the claim, not the code" rule
+- `templates/rule-probes-tuned.yaml` — the ladder out of the depth axis for MG-2
 - `references/adversarial-verify.md` § Manuscript-gate mode
 - `references/pipeline.md` — Phase 3, and the polish pass this does not replace

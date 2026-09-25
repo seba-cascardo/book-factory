@@ -65,6 +65,16 @@ Base skeleton, all profiles:
 │   │                               lives. Create it now: a project that has to
 │   │                               invent the file later invents it after the
 │   │                               fix pass that needed it.
+│   ├── fixed-defects.yaml        ← from templates/fixed-defects.yaml — empty
+│   │                               shell (delete the example entry, KEEP the
+│   │                               header). The negative twin of do-not-touch:
+│   │                               formulations that were wrong and must not
+│   │                               return. Same reason to create it now.
+│   ├── rule-probes-tuned.yaml    ← from templates/rule-probes-tuned.yaml —
+│   │                               empty shell, KEEP the header. Fills up at
+│   │                               Phase 4.5, when the gate reports rules too
+│   │                               wide to judge in one run. Without it the
+│   │                               depth half of coverage cannot close.
 │   └── sources/                  ← empty folder (setup populates the grounding library)
 ├── outline/
 │   └── units.yaml                ← schema present, no entries (Phase 2 fills)

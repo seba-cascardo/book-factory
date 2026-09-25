@@ -90,16 +90,58 @@ waivers: []
   #   debt: "reviews/verification-plan/PLAN.md — 56 tests, 0 run"
   #   # `debt` is the part that keeps this honest: it says what is owed, and it
   #   # appears verbatim in the done report.
+  #
+  # - check: manuscript_gate.coverage
+  #   # BREADTH. Lets a PASS-PARTIAL book reach `complete`. This one should feel
+  #   # expensive: it means there are subjects nobody opened. Breadth closes on
+  #   # its own as rounds drain the pool, so waiving it is choosing to stop.
+  #   waived_by: human
+  #   reason: "MG-2 quota held at 30/round by budget; three more rounds planned"
+  #   date: "2026-08-03"
+  #   debt: "444 rule candidates unaudited as of round 3"
+  #   signature: "MG-1:40/169|MG-2:60/474|MG-3:12/12|MG-4:1/1"
+  #   # PASTE the signature the gate prints. It pins the exact numbers: a waiver
+  #   # written when coverage was 40/169 must not keep covering the book after
+  #   # someone drops the quota to 5. A signature that no longer matches is
+  #   # reported STALE and does not count.
+  #
+  # - check: manuscript_gate.depth
+  #   # DEPTH. Lets a PASS-SAMPLED book reach `complete`. This is the routine
+  #   # one: on a large technical book some rules genuinely reach more instances
+  #   # than one agent run can judge — measured, 221 of 454 — and that is a fact
+  #   # about the book rather than a shortfall in the audit.
+  #   #
+  #   # Before waiving, look at round-N/rule-probes-proposed.yaml. Depth closes
+  #   # by narrowing rules in bible/rule-probes-tuned.yaml, and a narrowing is a
+  #   # claim about a rule's SCOPE. If the rule really is that wide, waive —
+  #   # that is the honest answer, not a smaller number.
+  #   waived_by: human
+  #   reason: "14 rules genuinely govern the whole load-script surface"
+  #   date: "2026-08-03"
+  #   debt: "14 of 60 audited rules judged from a sample; listed in REPORT.md"
+  #   signature: "MG-1:0s/40|MG-2:14s/60|MG-3:0s/12|MG-4:0s/1"
 
 manuscript_gate:
   # Phase 4.5 state. Persisted so a session that is cut off resumes at the round
   # it was on instead of starting over. Written by scripts/manuscript_gate.py.
   round: 0
-  verdict: null                   # BLOCKED | NEEDS-REVISION | PASS | null
+  verdict: null
+  # BLOCKED | NEEDS-REVISION | PASS-PARTIAL | PASS-SAMPLED | PASS | null
+  #
+  # PASS-PARTIAL = there are subjects NOBODY OPENED. Closes by spending rounds.
+  # PASS-SAMPLED = every subject was opened; some were read only IN PART.
+  #                Closes by narrowing them, or by a depth waiver.
+  #
+  # Neither blocks the work; both block the claim. `complete` needs PASS, or a
+  # signature-matching waiver for each axis that is short.
   open_critical: 0
   open_major: 0
   open_minor: 0
   rounds_without_new: 0           # consecutive rounds with no new blocking finding
+  breadth_signature: null         # covered/eligible per check, as printed
+  depth_signature: null           # sampled/covered per check, as printed
+  # Two quiet rounds at the SAME coverage are one round run twice. The per-round
+  # numbers live in <run_dir>/state.json and belong in the report's round history.
   converged: false
   run_dir: null                   # reviews/manuscript-gate-<YYYY-MM-DD>/
   history: []                     # one entry per round

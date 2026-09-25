@@ -49,6 +49,10 @@ except ImportError:  # pragma: no cover
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from bookkit.coverage import (  # noqa: E402
+    CoverageRecord, Subject, add_coverage_args, composite_fingerprint,
+    load_ledger, partition,
+)
 from bookkit.gitblame import blame_map, in_fix_run, is_repo  # noqa: E402
 from bookkit.project import Project, add_common_args, load_project  # noqa: E402
 from bookkit.selection import stratified_top  # noqa: E402
@@ -297,6 +301,52 @@ def mark_related(passages: list[Passage], cfg: AuditConfig,
 # ---------------------------------------------------------------------------
 
 
+def home_cap_for(probe: dict, cfg: AuditConfig) -> int:
+    """Per-concept override of the home-unit cap.
+
+    The trim is the depth axis of MG-1 coverage: a trimmed dossier is a SAMPLE of
+    its concept and may not be reported clean. That has to be closable by work,
+    not only by a global dial — otherwise a single sprawling concept keeps the
+    whole gate off `PASS` forever, which is a criterion nobody can satisfy.
+
+    So `home_cap` is settable per probe in `bible/concept-probes-tuned.yaml`.
+    Raising it is a budget decision about one concept, stated where the rest of
+    that concept's tuning already lives.
+    """
+    raw = probe.get("home_cap")
+    try:
+        return max(1, int(raw)) if raw is not None else cfg.home_cap
+    except (TypeError, ValueError):
+        return cfg.home_cap
+
+
+def trim_home(passages: list[Passage], home: str,
+              cfg: AuditConfig, cap: int | None = None) -> tuple[list[Passage], int]:
+    """Home-unit cap. Every other unit is uncapped.
+
+    INVARIANT, learned from the regression gate: a home-unit passage that is
+    cross-linked to a passage in ANOTHER unit is NEVER trimmed, whatever its
+    score. It is precisely the passage that can contradict — or vindicate — the
+    other unit, and therefore the whole reason the dossier exists. Trimming it by
+    score leaves the auditor looking at one side only.
+
+    The count it returns is the DEPTH axis of coverage: a dossier that trimmed
+    passages is a sample of its concept, and a sampled subject may not be
+    reported clean. Raising `home_cap` in `bible/audit-config.yaml` is how a
+    project buys the depth back.
+    """
+    cross_linked = {
+        p.line for p in passages
+        if p.unit == home and any(
+            not ref.startswith(f"{p.path}:") for ref in p.near_dup_of)
+    }
+    home_ps = sorted([p for p in passages if p.unit == home],
+                     key=lambda p: (-p.score, p.line))
+    kept_home = {p.line for p in home_ps[:(cap or cfg.home_cap)]} | cross_linked
+    kept = [p for p in passages if p.unit != home or p.line in kept_home]
+    return kept, len(passages) - len(kept)
+
+
 def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
                  pairs: list[tuple[float, Passage, Passage]], cfg: AuditConfig) -> str:
     home = probe.get("home") or node.get("introduced_in") or ""
@@ -307,23 +357,7 @@ def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
          | set(node.get("hinted_in") or [])) - {""}) if c]
     text_span = sorted({p.unit for p in passages})
 
-    # Home-unit cap. Every other unit is uncapped.
-    #
-    # INVARIANT, learned from the regression gate: a home-unit passage that is
-    # cross-linked to a passage in ANOTHER unit is NEVER trimmed, whatever its
-    # score. It is precisely the passage that can contradict — or vindicate —
-    # the other unit, and therefore the whole reason the dossier exists.
-    # Trimming it by score leaves the auditor looking at one side only.
-    cross_linked = {
-        p.line for p in passages
-        if p.unit == home and any(
-            not ref.startswith(f"{p.path}:") for ref in p.near_dup_of)
-    }
-    home_ps = sorted([p for p in passages if p.unit == home],
-                     key=lambda p: (-p.score, p.line))
-    kept_home = {p.line for p in home_ps[:cfg.home_cap]} | cross_linked
-    kept = [p for p in passages if p.unit != home or p.line in kept_home]
-    dropped = len(passages) - len(kept)
+    kept, dropped = trim_home(passages, home, cfg, home_cap_for(probe, cfg))
 
     # D2 = a related pair where ONE side was touched in a fix run and the other
     # was not. That is the mechanical signature of "the fix landed in 1 of N
@@ -344,6 +378,13 @@ def emit_dossier(cid: str, probe: dict, node: dict, passages: list[Passage],
     L.append(f"kg_drift: {{text_only: [{', '.join(only_text)}], "
              f"kg_only: [{', '.join(only_kg)}]}}")
     L.append(f"passages_total: {len(passages)}  # {dropped} trimmed from the home unit")
+    L.append(f"complete: {'false' if dropped else 'true'}")
+    if dropped:
+        L.append(f"# {dropped} home-unit passage(s) were trimmed — this dossier is a "
+                 f"SAMPLE of the concept. Set sampled:true in your findings and do not "
+                 f"report the concept clean. To see all of it, set `home_cap: "
+                 f"{len([p for p in passages if p.unit == home])}` on this probe in "
+                 f"bible/concept-probes-tuned.yaml.")
     if d2:
         L.append("d2_candidates:   # related pairs with DIVERGENT blame -> possible incomplete fix")
         L += [f"  - {s}" for s in d2]
@@ -530,9 +571,7 @@ def load_probes(project: Project) -> dict[str, dict]:
     it looks perfectly consistent.
     """
     base = project.load_yaml("bible/concept-probes.yaml")
-    if not base:
-        sys.exit("No bible/concept-probes.yaml. Run scripts/bootstrap_probes.py first.")
-    probes = {p["id"]: p for p in base.get("probes", []) if p.get("id")}
+    probes = {p["id"]: p for p in (base.get("probes") or []) if p.get("id")}
 
     tuned = project.load_yaml("bible/concept-probes-tuned.yaml")
     for p in tuned.get("probes", []) or []:
@@ -592,6 +631,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--persona", action="append", default=[], metavar="NAME",
                     help="Running-example character name, repeatable. Used only to "
                          "down-rank pure narration; guarded so it never trims a claim.")
+    ap.add_argument("--round", type=int, default=1, help="Round number, for the record.")
+    add_coverage_args(ap)
     args = ap.parse_args(argv)
 
     project = load_project(args.root, args.units)
@@ -603,6 +644,21 @@ def main(argv: list[str] | None = None) -> int:
     stopwords = stopwords_for(project.language_variant)
 
     probes = load_probes(project)
+    if not probes and not args.concept:
+        # No probes is a configuration state, not a crash. It used to exit here,
+        # which meant no coverage record got written — and a MISSING record reads
+        # as "unknown", which the verdict treats as incomplete. The gate is
+        # entitled to tell "MG-1 has nothing to audit" apart from "the emitter
+        # fell over"; silently conflating them is how a book sits at
+        # PASS-PARTIAL with nobody able to say why.
+        print("[dossier] no probes in bible/concept-probes.yaml. Run "
+              "scripts/bootstrap_probes.py, then tune the noisy ones. MG-1 has no "
+              "eligible surface until probes exist.")
+        if args.coverage:
+            CoverageRecord(check="MG-1", round=args.round,
+                           note="no probes configured — MG-1 has no eligible surface"
+                           ).write(args.coverage)
+        return 0
     if args.only:
         probes = {k: v for k, v in probes.items() if k in set(args.only)}
         if not probes:
@@ -627,8 +683,20 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = Path(args.out) if args.out else project.reviews / "concept-dossiers"
     targets = [args.concept] if args.concept else (sorted(probes) if args.all else [])
-    if not targets:
+    if not targets and not args.all:
         ap.error("Pick a mode: --probe-report, --concept ID, --all, or --emit-index.")
+    if not targets:
+        # `--all` over a project with no probes is a configuration problem, not a
+        # crash. It still has to leave a coverage record: a missing record reads
+        # as "unknown", and the gate is entitled to know the difference between
+        # "nothing to audit" and "the emitter fell over".
+        print("[dossier] no probes to build from — bible/concept-probes.yaml is empty. "
+              "MG-1 has nothing to audit until probes exist.")
+        if args.coverage:
+            CoverageRecord(check="MG-1", round=args.round,
+                           note="no probes configured — MG-1 has no eligible surface"
+                           ).write(args.coverage)
+        return 0
 
     out_dir.mkdir(parents=True, exist_ok=True)
     rows: list[tuple[str, int, int, int]] = []
@@ -653,6 +721,34 @@ def main(argv: list[str] | None = None) -> int:
         pairs = mark_related(ps, cfg, stopwords)
         d2 = sum(1 for _s, a, b in pairs if a.in_fix_run != b.in_fix_run)
         built.append((cid, probe, ps, pairs, span, d2))
+
+    # ELIGIBLE = post-filter: concepts with matching passages that span at least
+    # --min-units. That is the denominator, and it is fixed before the ledger and
+    # the quota take anything out of the pool.
+    home_of = {cid: (probe.get("home") or kg.get(cid, {}).get("introduced_in") or "")
+               for cid, probe, *_ in built}
+    subjects: dict[str, Subject] = {}
+    for cid, probe, ps, pairs, span, d2 in built:
+        _kept, trimmed = trim_home(ps, home_of[cid], cfg, home_cap_for(probe, cfg))
+        subjects[cid] = Subject(
+            id=cid,
+            # Every passage of the concept, not only the ones that survive the
+            # home-unit trim: a conservative fingerprint re-queues more often
+            # than strictly needed, and that is the safe direction.
+            fingerprint=composite_fingerprint([p.fp for p in ps]),
+            instances=len(ps),
+            sampled=trimmed > 0,
+        )
+
+    ledger = load_ledger(args.audited).get("MG-1", {})
+    _pool_subjects, already, requeued = partition(list(subjects.values()), ledger)
+    pool_ids = {s.id for s in _pool_subjects}
+    eligible_built = built
+    built = [t for t in built if t[0] in pool_ids]
+    if already or requeued:
+        print(f"[dossier] ledger: {len(already)} concept(s) already audited under an "
+              f"unchanged fingerprint (skipped, still counted), {len(requeued)} "
+              f"re-queued because their passages changed since.")
 
     # Two failure modes, two quotas.
     #
@@ -685,8 +781,43 @@ def main(argv: list[str] | None = None) -> int:
     for line in selection.report_lines("concept"):
         print(f"[dossier] {line}")
     if cut:
-        print(f"[dossier] {cut} concept(s) NOT emitted because of --top {args.top}. "
-              f"MG-1 coverage is partial this round.")
+        print(f"[dossier] {cut} concept(s) NOT emitted because of --top {args.top} — "
+              f"{cut / max(len(eligible_built), 1):.0%} of the eligible surface. MG-1 "
+              f"coverage is partial this round; run another round to drain the pool.")
+
+    if args.coverage:
+        selected_by_stratum: dict[str, int] = {}
+        eligible_by_stratum: dict[str, int] = {}
+        for t in eligible_built:
+            st = "incomplete-fix" if t[5] else "cross-unit"
+            eligible_by_stratum[st] = eligible_by_stratum.get(st, 0) + 1
+        emitted_subjects: list[Subject] = []
+        for t in emitted:
+            s = subjects[t[0]]
+            s.stratum, s.rank = selection.rank_of(t)
+            selected_by_stratum[s.stratum] = selected_by_stratum.get(s.stratum, 0) + 1
+            emitted_subjects.append(s)
+        rec = CoverageRecord(
+            check="MG-1",
+            round=args.round,
+            eligible_candidates=len(eligible_built),
+            selected=len(emitted),
+            emitted=len(emitted),
+            # Depth, not breadth: a dossier whose home unit was trimmed is a
+            # SAMPLE of its concept even though the concept was "covered".
+            sampled_within=sum(1 for s in emitted_subjects if s.sampled),
+            already_audited=already,
+            requeued=requeued,
+            strata={k: {"eligible": v, "selected": selected_by_stratum.get(k, 0)}
+                    for k, v in sorted(eligible_by_stratum.items())},
+            subjects=emitted_subjects,
+            cut=[{"id": c.item[0], "rank": c.rank, "stratum": c.stratum,
+                  "instances": len(c.item[2]),
+                  "site": f"home {home_of.get(c.item[0]) or '?'} · spans {c.item[4]} unit(s)"}
+                 for c in selection.cut],
+        )
+        rec.write(args.coverage)
+        print(f"[dossier] {rec.report_line('concept')} → {args.coverage}")
 
     if args.all and rows:
         idx = ["# Concept dossier index", "",
@@ -698,9 +829,16 @@ def main(argv: list[str] | None = None) -> int:
                     "touched in a declared fix run and the other was not. That is the "
                     "mechanical signature of a fix that landed in 1 of N sites. "
                     "**Start there.**"]
+        if already:
+            idx += ["", f"> {len(already)} concept(s) are absent because an earlier "
+                        f"round already audited them and their passages have not "
+                        f"changed; they still count as covered. {len(requeued)} came "
+                        f"back into the pool because their text was edited since."]
         if cut:
-            idx += ["", f"> **{cut} concept(s) below the cut were not emitted.** MG-1 "
-                        f"coverage this round is partial, and the gate report must say so."]
+            idx += ["", f"> **{cut} concept(s) below the cut were not emitted** — "
+                        f"{cut / max(len(eligible_built), 1):.0%} of the eligible "
+                        f"surface. MG-1 coverage this round is partial; the verdict is "
+                        f"`PASS-PARTIAL` until the pool drains."]
         (out_dir / "_index.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
         print(f"[dossier] {len(rows)} dossier(s), index → {out_dir / '_index.md'}")
 

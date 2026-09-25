@@ -120,6 +120,15 @@ claim.
 Write `reviews/manuscript-gate-<date>/round-N/findings/<concept>.<lens>.json`,
 conforming to `templates/gate-findings.schema.json`.
 
+**Write the file even when you found nothing.** It is also the COVERAGE record
+for this concept: a subject with no findings file is counted as a subject nobody
+audited, and the gate returns `PASS-PARTIAL` instead of `PASS`. A clean audit is
+a result — emit it, with your `N1`/`N2` results in it.
+
+If the dossier's front matter says `complete: false`, home-unit passages were
+trimmed and you are reading a SAMPLE of the concept. Set `sampled: true` and do
+not report the concept clean.
+
 Hard rules:
 
 - **`quote` is verbatim or you do not report it.** A paraphrase makes the finding
@@ -127,6 +136,8 @@ Hard rules:
 - **`other_sites` is mandatory and complete.** A finding that names one line
   produces a fix that lands in one of N sites — the exact defect this gate exists
   to eliminate. An empty array is a claim that you looked and there are none.
+  Prefer the `{location, anchor}` form — a bare line number goes stale the moment
+  anything above it is edited, which is what the fix pass does.
 - **Emit `N1` / `N2` / `D7a` when they apply.** "Verified correct, do not touch"
   is a first-class result. Its absence is what let a later fix pass introduce a
   factual error into text that was already right.

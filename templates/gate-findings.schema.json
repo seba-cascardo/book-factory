@@ -10,12 +10,12 @@
 
   "properties": {
     "check": {
-      "description": "Which gate check produced this file.",
-      "enum": ["MG-1", "MG-2", "MG-3", "MG-4", "MG-5", "MG-6"]
+      "description": "Which gate check produced this file. For MG-1 to MG-4 the file is also the COVERAGE record for its subject: a subject with no findings file was not audited, and the verdict counts it that way. An auditor that ran and found nothing still writes a file, with an empty `findings` array.",
+      "enum": ["MG-1", "MG-2", "MG-3", "MG-4", "MG-5", "MG-6", "MG-7"]
     },
     "lens": {
       "description": "The auditor's angle. Lenses run blind to each other on purpose: convergence on the same obvious finding costs you the three different ones.",
-      "enum": ["pairs", "numbers-and-absolutes", "source", "rule-vs-instance", "exercise-coverage", "whole-book-read", "mechanical"]
+      "enum": ["pairs", "numbers-and-absolutes", "source", "rule-vs-instance", "exercise-coverage", "whole-book-read", "mechanical", "fixed-defect"]
     },
     "subject": {
       "description": "Concept id, rule id, unit id, or 'manuscript' — whatever this run audited.",
@@ -99,13 +99,35 @@
       "type": "object",
       "required": ["location", "quote"],
       "properties": {
-        "location": { "$ref": "#/$defs/location" },
+        "location": {
+          "description": "path:line. A HINT, not the key — see `anchor`. Measured: during one day of fixes on the reference book, line-keyed references broke three times, and two of the three breaks were caused by ADDING a section rather than by a defect. Everything below an insertion shifts at once.",
+          "$ref": "#/$defs/location"
+        },
         "quote": {
           "description": "VERBATIM from the file. A paraphrase here makes the finding unverifiable and it will be dropped. If you cannot quote it, do not report it.",
           "type": "string",
           "minLength": 1
+        },
+        "anchor": {
+          "description": "A short verbatim substring that identifies this passage by content: unique in the file, short enough to survive a neighbouring edit. Optional only because `scripts/resolve_anchors.py` derives one from `quote` when it is absent — write it explicitly when the quote is long or its opening words are boilerplate. It is what distinguishes a passage that MOVED (repairable, `--heal` fixes the line) from one that was CHANGED (the finding has to be re-read).",
+          "type": "string"
         }
       }
+    },
+
+    "site_ref": {
+      "description": "A location plus the anchor that survives an edit above it. The bare-string form is accepted for hand-written findings and older rounds, but it cannot be healed and `resolve_anchors.py` reports it as NO-ANCHOR.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["location", "anchor"],
+          "properties": {
+            "location": { "$ref": "#/$defs/location" },
+            "anchor": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
     },
 
     "adjudication": {
@@ -206,9 +228,9 @@
           "type": "string"
         },
         "other_sites": {
-          "description": "EVERY other site that repeats the claim. Mandatory and complete. A finding that names a single line produces an incomplete fix, which is the defect this gate exists to eliminate. An empty array asserts that you looked and there are none.",
+          "description": "EVERY other site that repeats the claim. Mandatory and complete. A finding that names a single line produces an incomplete fix, which is the defect this gate exists to eliminate. An empty array asserts that you looked and there are none. Prefer the {location, anchor} form: a bare line number goes stale as soon as anything above it is edited, which is exactly what happens during the fix pass these sites exist to guide.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "$ref": "#/$defs/site_ref" }
         },
         "fix_scope": {
           "enum": ["edit_p1", "edit_p2", "edit_both", "edit_rule", "edit_instance",

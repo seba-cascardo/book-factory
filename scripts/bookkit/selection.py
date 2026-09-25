@@ -38,16 +38,40 @@ T = TypeVar("T")
 
 
 @dataclass
+class Cut:
+    """One item the quota left out, with the position it lost at.
+
+    The rank is not decoration. A human reading the packet can promote three
+    specific candidates into the next round without recalibrating anything —
+    but only if the list says which three were closest to the line.
+    """
+    stratum: str
+    rank: int          # 1-based position within its stratum
+    item: object
+
+
+@dataclass
 class Selection:
     """What was emitted, and — just as important — what was not."""
     emitted: list = field(default_factory=list)
     dropped: dict[str, int] = field(default_factory=dict)
     totals: dict[str, int] = field(default_factory=dict)
     quota: int = 0
+    # The items behind `dropped`, in the SAME order the one ranking produced.
+    # This is not a second selection: it is the tail of the first one, kept
+    # instead of thrown away, so the report can name what it skipped.
+    cut: list = field(default_factory=list)
+    # 1-based rank within its stratum, for emitted items too — the coverage
+    # record needs it to say where the cut fell.
+    ranks: dict[int, tuple[str, int]] = field(default_factory=dict)
 
     @property
     def dropped_total(self) -> int:
         return sum(self.dropped.values())
+
+    def rank_of(self, item) -> tuple[str, int]:
+        """(stratum, 1-based rank) for an emitted or cut item."""
+        return self.ranks.get(id(item), ("?", 0))
 
     def report_lines(self, noun: str = "item") -> list[str]:
         """Human-readable coverage note. Print it — a silent truncation reads as
@@ -57,8 +81,14 @@ class Selection:
             kept = total - self.dropped.get(stratum, 0)
             out.append(f"{stratum}: {kept}/{total} {noun}(s) emitted")
         if self.dropped_total:
-            out.append(f"NOT emitted: {self.dropped_total} {noun}(s) — coverage is "
-                       f"partial and the report must say so")
+            eligible = sum(self.totals.values()) or 1
+            share = self.dropped_total / eligible
+            # Stated as surface, not as configuration. "30 of 474" reads like a
+            # setting somebody chose; "444 candidates will not be looked at —
+            # 94% of the surface" reads like a decision somebody made.
+            out.append(f"NOT emitted: {self.dropped_total} {noun}(s) — {share:.0%} of the "
+                       f"eligible surface will not be looked at this round. Coverage is "
+                       f"partial and the verdict must say so.")
         return out
 
 
@@ -84,13 +114,15 @@ def stratified_top(items: Sequence[T],
         buckets[key].sort(key=rank_within)
 
     totals = {k: len(v) for k, v in buckets.items()}
+    # One ranking, recorded once. Everything downstream — the emitted list, the
+    # cut list, the coverage record — reads these positions rather than sorting
+    # again. A second sort anywhere is the bug this module exists to prevent.
+    ranks = {id(item): (key, i + 1)
+             for key, items in buckets.items() for i, item in enumerate(items)}
 
     if quota <= 0:
-        ordered: list[T] = []
-        for key in sorted(buckets):
-            ordered.extend(buckets[key])
         return Selection(emitted=_interleave(buckets), dropped={}, totals=totals,
-                         quota=0)
+                         quota=0, cut=[], ranks=ranks)
 
     weights = dict(weights or {})
     for key in buckets:
@@ -120,8 +152,12 @@ def stratified_top(items: Sequence[T],
     picked = {k: buckets[k][:share[k]] for k in buckets}
     dropped = {k: len(buckets[k]) - len(picked[k]) for k in buckets
                if len(buckets[k]) > len(picked[k])}
+    cut = [Cut(stratum=k, rank=i + 1, item=item)
+           for k, items in buckets.items()
+           for i, item in enumerate(items) if i >= share[k]]
+    cut.sort(key=lambda c: (c.rank, c.stratum))
     return Selection(emitted=_interleave(picked), dropped=dropped, totals=totals,
-                     quota=quota)
+                     quota=quota, cut=cut, ranks=ranks)
 
 
 def _interleave(buckets: dict[str, list]) -> list:

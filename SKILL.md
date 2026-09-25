@@ -258,7 +258,7 @@ Read `references/manuscript-gate.md`. **Fires automatically** when the last unit
 reaches `archived` — write `phase: manuscript-gate` and start Round 1. Do not
 report the book finished from Phase 4.
 
-Six checks over the whole book, not the unit:
+Seven checks over the whole book, not the unit:
 
 | | Question | Engine |
 |---|---|---|
@@ -268,20 +268,40 @@ Six checks over the whole book, not the unit:
 | MG-4 | Reading it end to end — **is it enough?** | `reader-pov` whole-book mode |
 | MG-5 | Does the source render as intended? | `scripts/lint_render.py` |
 | MG-6 | Did the code run, or is the debt declared? | runner audit + waivers |
+| MG-7 | Did a defect that was already fixed come back? | `scripts/check_fixed_defects.py` |
 
 Every `critical`/`major` from MG-1–4 goes through adversarial verification with a
 mandate to refute before it reaches the human.
 
-**The verdict is computed** — any unresolved critical → `BLOCKED`; any unresolved
-major → `NEEDS-REVISION`; else `PASS`. **The gate iterates**: fixes are proposed,
-the human decides, accepted edits make the claim index emit `PROPAGATE`, and those
-siblings become the next round's scope. It closes on `PASS` **plus two
-consecutive rounds with no new blocking findings** — one clean round is not
-evidence. At `max_rounds` it escalates rather than relaxing the criterion.
+**The verdict is computed, and coverage is two of its terms** — any unresolved
+critical → `BLOCKED`; any unresolved major → `NEEDS-REVISION`; then
+`PASS-PARTIAL` if any subject was never opened, `PASS-SAMPLED` if all were opened
+but some only in part, else `PASS`. Neither partial state blocks the work; both
+block the claim. Without a coverage term a book reaches `complete` having audited
+30 of 474 candidate rules, and "two quiet rounds" is satisfied by construction
+because rounds 2+ re-read the same 30.
+
+The two axes are separate because they close by different work. **Breadth** closes
+on its own as rounds drain the pool. **Depth** closes by narrowing a subject in
+`bible/rule-probes-tuned.yaml` (the gate writes the ranked worklist to
+`round-N/rule-probes-proposed.yaml`) or by raising a concept's `home_cap` — human
+judgement, and sometimes the honest answer is that the rule really is that wide,
+which is what `manuscript_gate.depth` waives. Merging them made `PASS`
+unreachable by construction on any large technical book.
+
+**The gate iterates**: fixes are proposed, the human decides, accepted edits make
+the claim index emit `PROPAGATE`, and those siblings — **plus the next unaudited
+slice of the candidate pool** — become the next round's scope. Coverage therefore
+grows monotonically; `reviews/manuscript-gate-<date>/audited.yaml` is what
+remembers. It closes on `PASS` (or `PASS-PARTIAL` plus a signature-matching
+coverage waiver) **plus two consecutive rounds with no new blocking findings** —
+one clean round is not evidence. At `max_rounds` it escalates rather than
+relaxing the criterion.
 
 ```bash
 python scripts/manuscript_gate.py --round 1        # prepare + verdict
 python scripts/manuscript_gate.py --verdict-only   # after dispatching auditors
+python scripts/resolve_anchors.py --heal           # after a fix pass
 ```
 
 ## Phase 5: Build & export
@@ -301,11 +321,14 @@ Preflight, every profile: `lint_render.py --fail-on critical`,
 `phase: complete` is not a label anyone may assert. It requires all of:
 
 1. every unit `archived`;
-2. the manuscript gate at `PASS` **and converged**;
+2. the manuscript gate at `PASS` **and converged** — or partial with a
+   signature-matching waiver for each short axis (`manuscript_gate.coverage` for
+   breadth, `manuscript_gate.depth` for depth);
 3. no unresolved `CHANGED` in `bible/claim-index.yaml`;
 4. every build target verified;
-5. a done report the human accepted, listing open `waivers` and unresolved
-   minors.
+5. a done report the human accepted, listing open `waivers`, unresolved minors,
+   and — if the gate closed short on either axis — how much of the surface was
+   never opened, and which subjects were read only in part.
 
 Anything short of that is `blocked-on-manuscript-gate`, and saying so is the
 useful thing to do.
@@ -325,6 +348,8 @@ book this skill never scaffolded. See `scripts/README.md`.
 | `validate_claim_index.py` | `PROPAGATE` — what else says the same thing |
 | `bootstrap_probes.py` | Seeds concept probes from the KG, glossary, or frequency |
 | `extract_rule_candidates.py` | MG-2 rule ↔ instance pairing |
+| `check_fixed_defects.py` | MG-7 — a fixed defect must not come back |
+| `resolve_anchors.py` | References by content anchor; `--heal` after a fix pass |
 | `extract_code_corpus.py` | MG-6 verification-plan raw material |
 | `lint_style.py` | The Proofreader's mechanical half |
 | `sync_manuscript.py` | `final/` → `manuscript.md`, with `--check` |
@@ -357,8 +382,11 @@ project/
 │   ├── sources/               # PDFs + .md extractions + figures/ + sources.md index
 │   ├── claim-index.yaml       # concept × location + propagation (generated)
 │   ├── concept-probes.yaml    # generated · concept-probes-tuned.yaml (hand-written)
+│   ├── rule-probes-tuned.yaml # hand-written; narrows wide rules so MG-2 depth
+│                              # can close by work rather than by waiver
 │   ├── audit-config.yaml      # fix-run commits, persona names, code kinds
 │   ├── do-not-touch.md        # auto-refutation anchors — verified-correct passages
+│   ├── fixed-defects.yaml     # MG-7 — defective formulations that must not return
 │   ├── claims-map.yaml        # scientific-paper only
 │   ├── characters/ world.md plot-structure.md arcs.md timeline.md   # literary only
 │   ├── examples-library.md    # profiles with a running example
@@ -371,7 +399,9 @@ project/
 ├── final/unit-NN.md
 ├── project-status.yaml        # phase, retries, runs, waivers, manuscript_gate
 ├── manuscript.md              # Phase 4, generated by scripts/sync_manuscript.py
-├── reviews/manuscript-gate-<date>/   # Phase 4.5: GROUNDING.md, round-N/, REPORT.md
+├── reviews/manuscript-gate-<date>/   # Phase 4.5: GROUNDING.md, audited.yaml,
+│                              # state.json, round-N/ (coverage-*.json,
+│                              # coverage-summary.md, findings/), REPORT.md
 └── build/                     # Phase 5 outputs
 ```
 

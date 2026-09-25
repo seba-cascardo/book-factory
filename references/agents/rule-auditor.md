@@ -148,14 +148,24 @@ explanation, which reads identically to a run that found nothing.
 Write `reviews/manuscript-gate-<date>/round-N/findings/rule-<rule-id>.json` or
 `exercises-<unit>.json`, conforming to `templates/gate-findings.schema.json`.
 
+**Write the file even when you found nothing.** The findings file is also the
+COVERAGE record for this subject: the gate counts a subject with no file as a
+subject nobody audited, and the verdict becomes `PASS-PARTIAL` rather than
+`PASS`. A clean audit is a result — emit it with an empty `findings` array and
+your `N1`/`N2` results in it.
+
 Set `instances_judged` to the real count, and `sampled: true` when you did not
 reach them all. An undercount reported as complete turns a partial audit into a
-false all-clear, which is worse than no audit.
+false all-clear, which is worse than no audit — and `sampled: true` now feeds the
+verdict directly: it is the depth axis of coverage, and a sampled subject keeps
+the gate off `PASS`.
 
 Hard rules, same as every auditor here:
 
 - `quote` verbatim, or do not report it.
-- `other_sites` mandatory and complete.
+- `other_sites` mandatory and complete. Prefer the `{location, anchor}` form: a
+  bare line number goes stale as soon as anything above it is edited, which is
+  exactly what happens during the fix pass these sites exist to guide.
 - `N1` / `N2` are first-class results and must be emitted. "Verified correct, do
   not touch" needs somewhere to live, and its absence is what allowed a fix pass
   to damage correct text.

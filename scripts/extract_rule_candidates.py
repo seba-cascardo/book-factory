@@ -41,13 +41,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from bookkit.coverage import (  # noqa: E402
+    CoverageRecord, Subject, add_coverage_args, composite_fingerprint,
+    load_ledger, partition,
+)
 from bookkit.gitblame import blame_map, in_fix_run, is_repo  # noqa: E402
 from bookkit.project import Project, add_common_args, load_project  # noqa: E402
 from bookkit.selection import Selection, stratified_top  # noqa: E402
 from bookkit.segment import (  # noqa: E402
     Record, code_blocks, paragraphs, prev_prose, segment,
 )
-from bookkit.textmetrics import content_terms, stopwords_for  # noqa: E402
+from bookkit.textmetrics import content_terms, fingerprint, stopwords_for  # noqa: E402
 
 # Strong modality. Deliberately narrower than the claim-scoring modality set in
 # build_concept_dossier: a rule PRESCRIBES, it does not merely describe.
@@ -106,6 +110,16 @@ RX_EXAMPLE_HEADING = re.compile(r"\b(Example|Examples|Exercise|Exercises|Practic
 # run. The file still ships, flagged `tractable: false`, and the auditor is told
 # to report it as a sample. A sampled audit reported as complete is worse than no
 # audit, so this flag is load-bearing.
+#
+# It is also a DEBT, not a fact about the world. `tractable: false` keeps the gate
+# off `PASS` forever unless something can change it, and a criterion nothing can
+# satisfy is the decay this toolkit argues against everywhere else — measured on
+# the reference book, 221 of 454 rules were over this line, so a derived-only flag
+# would have made `PASS` unreachable by construction.
+#
+# `bible/rule-probes-tuned.yaml` is what makes it reachable: narrowing a rule's
+# terms, scoping it, or splitting it into sub-rules brings each subject under the
+# ceiling, and then depth closes by WORK rather than by waiver.
 TRACTABLE_MAX_INSTANCES = 40
 
 
@@ -300,7 +314,8 @@ def attach_instances(rules: list[Rule], instances: list[Instance],
 
     Returns the number of rules dropped for having no discriminating term at all.
     Those are usually real rules stated over the running example's vocabulary; the
-    fix is a hand-written probe, not a lower ceiling.
+    fix is a hand-written entry in `bible/rule-probes-tuned.yaml`, not a lower
+    ceiling. See § Tuned rule probes below for the format.
     """
     # Two ceilings, take the tighter. The ratio adapts to corpus size; the
     # absolute one encodes that a term reaching more instances than an agent can
@@ -339,6 +354,172 @@ def attach_instances(rules: list[Rule], instances: list[Instance],
     return dropped
 
 
+# ---------------------------------------------------------------------------
+# Tuned rule probes — the ladder for the depth axis
+# ---------------------------------------------------------------------------
+#
+# `bible/concept-probes-tuned.yaml` has always let a human narrow a concept by
+# hand. Rules had no equivalent, so `tractable: false` was purely derived from
+# `len(instances)` and nothing a person could do would change it. That made the
+# depth half of coverage a permanent debt: on the reference book 221 of 454 rules
+# were over the ceiling, so `PASS` was unreachable however much work anyone did,
+# and every project would have ended at a standing waiver. A criterion nobody can
+# satisfy decays exactly like a percentage floor.
+#
+# So the same affordance, for rules. Four narrowings and one split:
+#
+#   key_terms       replace the derived terms outright
+#   require_terms   an instance must ALSO contain all of these
+#   exclude_pattern instances matching this regex are out of scope
+#   scope_units     only instances in these units
+#   scope_heading   only instances under a heading path containing this
+#   split           partition one broad rule into scoped sub-rules
+#
+# Narrowing is a claim about the rule's SCOPE, not a way to make a number
+# smaller. `scripts/manuscript_gate.py` writes a ranked worklist of every
+# intractable rule to `round-N/rule-probes-proposed.yaml` so the work starts from
+# the real list rather than from a blank file.
+
+
+def load_rule_overrides(project: Project) -> dict[str, dict]:
+    doc = project.load_yaml("bible/rule-probes-tuned.yaml")
+    out: dict[str, dict] = {}
+    for entry in (doc.get("rules") or []):
+        if isinstance(entry, dict) and entry.get("id"):
+            out[str(entry["id"])] = entry
+    return out
+
+
+def _term_pats(terms: list[str]) -> list[re.Pattern]:
+    return [re.compile(rf"(?<![\w]){re.escape(t)}(?![\w])") for t in terms]
+
+
+def _rematch(rule: Rule, terms: list[str], instances: list[Instance],
+             spec: dict, fix_run: set[str]) -> list[Instance]:
+    """Re-attach instances to one rule under a hand-written narrowing."""
+    pats = _term_pats(terms)
+    req = _term_pats([str(t) for t in (spec.get("require_terms") or [])])
+    units = {str(u) for u in (spec.get("scope_units") or [])}
+    heading = str(spec.get("scope_heading") or "")
+    try:
+        excl = re.compile(spec["exclude_pattern"]) if spec.get("exclude_pattern") else None
+    except re.error as exc:
+        print(f"[rules] BAD exclude_pattern on {rule.rule_id}: {exc}")
+        excl = None
+
+    out: list[Instance] = []
+    for inst in instances:
+        if inst.path == rule.path and inst.line == rule.line:
+            continue
+        if units and inst.unit not in units:
+            continue
+        if heading and heading not in inst.heading_path:
+            continue
+        hay = f"{inst.text}\n{inst.caption}"
+        if excl and excl.search(hay):
+            continue
+        hit = [t for t, p in zip(terms, pats) if p.search(hay)]
+        if not hit:
+            continue
+        if req and not all(p.search(hay) for p in req):
+            continue
+        copy = Instance(**{**inst.__dict__, "matched_terms": hit})
+        copy.in_fix_run = in_fix_run(inst.blame_commit, fix_run)
+        out.append(copy)
+    return out
+
+
+def apply_rule_overrides(rules: list[Rule], instances: list[Instance],
+                         overrides: dict[str, dict],
+                         fix_run: set[str]) -> tuple[list[Rule], list[str]]:
+    """Apply hand-written narrowings. Returns (rules, notes)."""
+    if not overrides:
+        return rules, []
+
+    by_id = {r.rule_id: r for r in rules}
+    notes: list[str] = []
+    for unknown in sorted(set(overrides) - set(by_id)):
+        # Loud, because a typo here silently does nothing — and the human will
+        # believe they closed a rule they did not touch.
+        notes.append(f"tuned probe for unknown rule id `{unknown}` — no such "
+                     f"candidate. Check the id against the rule index.")
+
+    out: list[Rule] = []
+    for rule in rules:
+        spec = overrides.get(rule.rule_id)
+        if not spec:
+            out.append(rule)
+            continue
+
+        splits = spec.get("split") or []
+        if splits:
+            for part in splits:
+                suffix = re.sub(r"[^\w-]+", "-", str(part.get("suffix") or "part")).strip("-")
+                sub = Rule(rule_id=f"{rule.rule_id}--{suffix}", unit=rule.unit,
+                           path=rule.path, line=rule.line, text=rule.text,
+                           heading_path=rule.heading_path,
+                           key_terms=[str(t) for t in (part.get("key_terms")
+                                                       or rule.key_terms)],
+                           blame_commit=rule.blame_commit, in_fix_run=rule.in_fix_run)
+                sub.instances = _rematch(sub, sub.key_terms, instances, part, fix_run)
+                notes.append(f"{rule.rule_id} split -> {sub.rule_id}: "
+                             f"{len(sub.instances)} instance(s)")
+                out.append(sub)
+            continue
+
+        before = len(rule.instances)
+        terms = [str(t) for t in (spec.get("key_terms") or rule.key_terms)]
+        rule.key_terms = terms
+        rule.instances = _rematch(rule, terms, instances, spec, fix_run)
+        notes.append(f"{rule.rule_id} narrowed: {before} -> {len(rule.instances)} "
+                     f"instance(s)"
+                     + ("  [still over the ceiling]"
+                        if len(rule.instances) > TRACTABLE_MAX_INSTANCES else "  [tractable]"))
+        out.append(rule)
+    return out, notes
+
+
+def propose_rule_probes(rules: list[Rule], out_path: Path) -> int:
+    """Write the worklist of rules that can only be SAMPLED.
+
+    An escape hatch nobody can find is not an escape hatch. Depth closes by
+    narrowing intractable rules one at a time, so the toolkit owes whoever does
+    that a concrete, ranked list instead of a blank file — the same reason the
+    verification plan is generated from `deferred` rather than described.
+    """
+    over = sorted((r for r in rules if len(r.instances) > TRACTABLE_MAX_INSTANCES),
+                  key=lambda r: -len(r.instances))
+    L = ["# rule-probes-proposed.yaml — GENERATED WORKLIST, not configuration.",
+         "#",
+         f"# {len(over)} rule(s) have more than {TRACTABLE_MAX_INSTANCES} instances and can "
+         f"therefore only be",
+         "# SAMPLED. A sampled subject may never be reported clean, so each one keeps the",
+         "# gate at `PASS-SAMPLED`.",
+         "#",
+         "# Copy the entries you want into `bible/rule-probes-tuned.yaml` and uncomment ONE",
+         "# narrowing per rule. Narrowing is a claim about the rule's SCOPE — if the rule",
+         "# really does reach all those instances, do not shrink it: leave it sampled and",
+         "# waive the depth, which is the honest outcome.",
+         "#",
+         "# See templates/rule-probes-tuned.yaml for the full format.",
+         "", "rules:"]
+    for r in over:
+        units = sorted({i.unit for i in r.instances})
+        L += [f"  # {len(r.instances)} instances · terms: {', '.join(r.key_terms)} · "
+              f"units: {', '.join(units[:8])}{' …' if len(units) > 8 else ''}",
+              f"  # rule at {r.loc} — {r.heading_path}",
+              f"  # - id: {r.rule_id}",
+              f"  #   key_terms: [{r.key_terms[0] if r.key_terms else ''}]"
+              f"        # keep only the term that carries the rule",
+              f"  #   require_terms: []        # an instance must ALSO contain these",
+              f"  #   scope_units: []          # only instances in these units",
+              f"  #   note: \"\"",
+              ""]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+    return len(over)
+
+
 # Share of the emission quota per failure mode.
 #
 # The two modes are genuinely different defects, and one of them is far more
@@ -369,6 +550,24 @@ def rule_rank(rule: Rule) -> tuple:
     return (len(rule.instances) > TRACTABLE_MAX_INSTANCES,
             -len({i.unit for i in rule.instances} - {rule.unit}),
             len(rule.instances))
+
+
+def rule_subject(rule: Rule) -> Subject:
+    """The ledger's view of a rule: what an audit of it would have read.
+
+    The fingerprint spans the rule sentence AND every instance shown with it. An
+    auditor's verdict was reached against those instances, so editing one of them
+    invalidates the verdict and the rule returns to the pool.
+    """
+    shown = sorted(rule.instances, key=lambda i: (i.unit, i.line))[:TRACTABLE_MAX_INSTANCES]
+    return Subject(
+        id=rule.rule_id,
+        fingerprint=composite_fingerprint(
+            [fingerprint(rule.text)] + [fingerprint(i.text) for i in shown]),
+        stratum=rule_stratum(rule),
+        instances=len(rule.instances),
+        sampled=len(rule.instances) > TRACTABLE_MAX_INSTANCES,
+    )
 
 
 def select_rules(rules: list[Rule], quota: int) -> Selection:
@@ -465,6 +664,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="A key term appearing in more than this fraction of instances "
                          "discriminates nothing and is ignored (default 0.15). Raise it "
                          "only if too many rules come back with no terms at all.")
+    ap.add_argument("--round", type=int, default=1, help="Round number, for the record.")
+    ap.add_argument("--propose-probes", metavar="PATH", default=None,
+                    help="Write the ranked worklist of rules that can only be SAMPLED "
+                         "(round-N/rule-probes-proposed.yaml). Depth closes by narrowing "
+                         "these one at a time; a blank file is not a starting point.")
+    add_coverage_args(ap)
     args = ap.parse_args(argv)
 
     project = load_project(args.root, args.units)
@@ -488,14 +693,81 @@ def main(argv: list[str] | None = None) -> int:
     df = term_document_frequency(rules, instances)
     dropped = attach_instances(rules, instances, fix_run, df, args.df_ceiling)
 
+    # Hand-written narrowings, BEFORE the min-instances filter and before
+    # tractability is computed — they are what makes `tractable: false` a debt a
+    # person can pay down rather than a permanent fact.
+    rules, tuned_notes = apply_rule_overrides(
+        rules, instances, load_rule_overrides(project), fix_run)
+    for note in tuned_notes:
+        print(f"[rules] tuned: {note}")
+
+    # ELIGIBLE = post-filter. Everything that survived --min-instances, the
+    # --df-ceiling term drop and the imperative/voice discard. This is the
+    # denominator, and it does not include raw candidates: a denominator with
+    # noise in it inflates the percentage in the comfortable direction.
     kept = [r for r in rules if len(r.instances) >= args.min_instances]
-    selection = select_rules(kept, args.top)
+    subjects = {r.rule_id: rule_subject(r) for r in kept}
+
+    # The ledger takes what earlier rounds already audited OUT OF THE POOL and
+    # leaves it IN THE DENOMINATOR. That is what turns --top back into the cost
+    # dial its comment always claimed it was, instead of a permanent ceiling.
+    ledger = load_ledger(args.audited).get("MG-2", {})
+    _pool_subjects, already, requeued = partition(list(subjects.values()), ledger)
+    pool_ids = {s.id for s in _pool_subjects}
+    pool = [r for r in kept if r.rule_id in pool_ids]
+
+    selection = select_rules(pool, args.top)
 
     print(f"[rules] {len(rules)} rule candidate(s), {len(instances)} instance(s) in "
           f"{len(records)} unit(s); {len(kept)} rule(s) with >= "
           f"{args.min_instances} instance(s)")
+    if already or requeued:
+        print(f"[rules] ledger: {len(already)} rule(s) already audited under an "
+              f"unchanged fingerprint (skipped, still counted), {len(requeued)} "
+              f"re-queued because their text changed since.")
     for line in selection.report_lines("rule"):
         print(f"[rules] {line}")
+
+    if args.coverage:
+        eligible_by_stratum: dict[str, int] = {}
+        for r in kept:
+            st = subjects[r.rule_id].stratum
+            eligible_by_stratum[st] = eligible_by_stratum.get(st, 0) + 1
+        selected_by_stratum: dict[str, int] = {}
+        emitted_subjects: list[Subject] = []
+        for r in selection.emitted:
+            s = subjects[r.rule_id]
+            s.stratum, s.rank = selection.rank_of(r)
+            selected_by_stratum[s.stratum] = selected_by_stratum.get(s.stratum, 0) + 1
+            emitted_subjects.append(s)
+        rec = CoverageRecord(
+            check="MG-2",
+            round=args.round,
+            eligible_candidates=len(kept),
+            selected=len(selection.emitted),
+            emitted=len(selection.emitted),
+            sampled_within=sum(1 for s in emitted_subjects if s.sampled),
+            already_audited=already,
+            requeued=requeued,
+            strata={k: {"eligible": v, "selected": selected_by_stratum.get(k, 0)}
+                    for k, v in sorted(eligible_by_stratum.items())},
+            subjects=emitted_subjects,
+            # Ranked, so a human can promote three specific rules into the next
+            # round without recalibrating anything.
+            cut=[{"id": c.item.rule_id, "rank": c.rank, "stratum": c.stratum,
+                  "instances": len(c.item.instances), "site": c.item.loc}
+                 for c in selection.cut],
+        )
+        rec.write(args.coverage)
+        print(f"[rules] {rec.report_line('rule')} → {args.coverage}")
+
+    if args.propose_probes:
+        n_over = propose_rule_probes(kept, Path(args.propose_probes))
+        if n_over:
+            print(f"[rules] {n_over} rule(s) can only be SAMPLED "
+                  f"(> {TRACTABLE_MAX_INSTANCES} instances). Ranked worklist → "
+                  f"{args.propose_probes}. Narrow them in bible/rule-probes-tuned.yaml "
+                  f"to close the depth axis, or waive it — but do not report them clean.")
     if dropped:
         print(f"[rules] {dropped} rule(s) dropped — every key term appears in more than "
               f"{args.df_ceiling:.0%} of instances, so nothing narrows them. These are "
@@ -527,11 +799,18 @@ def main(argv: list[str] | None = None) -> int:
            "a per-unit reviewer was structurally unable to help, but a rule with more "
            f"than {TRACTABLE_MAX_INSTANCES} instances can only be SAMPLED, and a sampled "
            "rule may never be reported clean.", ""]
+    if already:
+        idx += [f"> {len(already)} rule(s) are not in this round's list because an "
+                f"earlier round already audited them and their text has not changed. "
+                f"They still count as covered. {len(requeued)} rule(s) came BACK into "
+                f"the pool because their text was edited since.", ""]
     if cut:
         per = ", ".join(f"{k}: {v}" for k, v in sorted(selection.dropped.items()))
+        share = cut / max(len(kept), 1)
         idx += [f"> **{cut} rule(s) below the cut were not emitted** (`--top "
-                f"{args.top}` — dropped {per}). Coverage of MG-2 this round is "
-                f"partial, and the gate report must say so.", "",
+                f"{args.top}` — dropped {per}) — {share:.0%} of the eligible surface "
+                f"will not be looked at this round. MG-2 coverage is partial; the "
+                f"verdict is `PASS-PARTIAL` until the pool drains.", "",
                 "Each failure mode carries its own quota. Blending them into one "
                 "score starves the intra-unit mode — the more numerous defect — "
                 "because cross-unit candidates dominate the pool.", ""]
@@ -544,8 +823,9 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "_index.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
     print(f"[rules] {len(emitted)} rule file(s) → {out_dir}")
     if cut:
-        print(f"[rules] {cut} rule(s) NOT emitted because of --top {args.top}. "
-              f"MG-2 coverage is partial this round.")
+        print(f"[rules] {cut} rule(s) NOT emitted because of --top {args.top} — "
+              f"{cut / max(len(kept), 1):.0%} of the eligible surface. MG-2 coverage "
+              f"is partial this round; run another round to drain the pool.")
     return 0
 
 

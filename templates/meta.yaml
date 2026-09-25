@@ -215,8 +215,20 @@ pipeline:
     # Two, not one. One clean round is not evidence: finder agents miss things
     # and the defect tail is long. The second round is where this earns its cost.
     concept_min_units: 2         # audit concepts spanning at least this many units
-    top_concepts: 40             # cost dial for MG-1; whatever is cut is reported
-    top_rules: 30                # cost dial for MG-2; likewise
+    top_concepts: 40             # ~170-230k tokens x passes_per_subject EACH
+    top_rules: 30                # ~170-230k tokens x passes_per_subject EACH
+    # The cost is on the same line as the dial on purpose. Measured on the
+    # reference book: one lens run costs 170-230k tokens and 10-16 minutes, so
+    # `top_rules: 30` with `passes_per_subject: 2` is roughly 12M tokens for MG-2
+    # alone. That is a real decision and it should not be discovered afterwards.
+    #
+    # These are PER-ROUND quotas, not ceilings. Round 2+ skips whatever
+    # `reviews/manuscript-gate-<date>/audited.yaml` already records and selects
+    # the NEXT slice, so coverage grows monotonically and a project that wants a
+    # true `PASS` gets there by spending rounds. Until the pool drains the
+    # verdict is `PASS-PARTIAL`: no blocking findings, and an explicit statement
+    # of how much was never looked at.
+    #
     # Both quotas are split PER FAILURE MODE, not spent on a single ranking.
     # Measured: ranking cross-unit and intra-unit candidates on one scale emitted
     # 40 cross-unit rules and ZERO intra-unit ones — and intra-unit is 7 of 10
@@ -235,6 +247,10 @@ pipeline:
       MG-4: true                 # whole-book read — "is it enough?"
       MG-5: true                 # render lint
       MG-6: true                 # executable code: runner or declared debt
+      MG-7: true                 # a defect in bible/fixed-defects.yaml came back
+    # MG-1..MG-4 can be partially covered and carry a coverage term in the
+    # verdict. MG-5, MG-6 and MG-7 are deterministic, cost seconds, and always
+    # run over the whole book.
 
   reader_panel: 1                # how many Reader-POV personas simulate per run
   # 1 by default. The profile names the persona(s); set higher only when a

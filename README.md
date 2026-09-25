@@ -27,6 +27,7 @@ One pipeline, five **document profiles** — each with its own register, structu
 - **It knows what else says the same thing.** A fingerprint-keyed claim index means editing one passage tells you which other passages just went stale. Incomplete fixes are the defect class this exists to kill.
 - **Deterministic checks are code, not prompts.** Rendering hazards, terminology pins, propagation — a regex doesn't hallucinate a violation and isn't tired by chapter 14. The agents keep the judgement.
 - **Nothing turns off silently.** Any disabled check records who waived it, why, and what is owed. `complete` has preconditions the skill actually verifies.
+- **The verdict knows what it did not look at.** Coverage is a computed term, not a note somebody remembers to write: a gate that audited 30 of 474 candidates returns `PASS-PARTIAL`, names the number, and lists the ranked remainder. Breadth and depth are separate terms with separate ways out — later rounds audit the *next* slice on their own, and a subject too wide to judge in one run can be narrowed by hand. `PASS` is reachable by work, never by assumption.
 
 ## Pipeline
 
@@ -53,9 +54,12 @@ Writer → Editor → Humanizer → Reader-POV → Critic (GATE)
 Phase 4.5 · MANUSCRIPT GATE  (the book is the unit, not the chapter)
   concept audit · rule vs its own code · exercise vs content
   whole-book read · render lint · runner-or-declared-debt
+  fixed-defect regression
     → adversarial verification of every critical/major
     → human decides → accepted fixes emit PROPAGATE → next round
-  closes on PASS + two quiet rounds, or escalates
+    → next round also audits the next UNAUDITED slice, so coverage grows
+  closes on PASS + two quiet rounds — or partial coverage with the numbers on
+  record — or escalates
 ```
 
 A per-unit reviewer cannot find a contradiction that spans two units — it sees

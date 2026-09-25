@@ -1,5 +1,220 @@
 # Changelog
 
+## 3.3 — A binary criterion needs a ladder
+
+Written from a review of v3.2. The coverage term landed and was verifiable, but
+it carried a flaw of exactly the kind it was built to prevent.
+
+**`PASS` was unreachable by construction.** v3.2 required
+`covered == eligible AND sampled == 0`. Breadth had a mechanism — rounds drain
+the pool, so it closes by spending rounds. Depth had none: `tractable` was
+derived purely from `len(instances) <= 40`, with no override, no narrowing, no
+hand-written probe for rules. **On the reference book 221 of 454 rules were over
+that line**, so `sampled == 0` could never hold however much work anyone did.
+Every large technical book would have ended at `PASS-PARTIAL` plus a standing
+waiver, permanently.
+
+That is the decay this design rejects for percentage floors, arriving through the
+other door — and `references/manuscript-gate.md` already said so about a
+different criterion: *"That is unreachable — and promising it produces a gate
+someone turns off."* v3.2 applied the reasoning to findings and not to depth.
+
+Aggravating it, `extract_rule_candidates.py` said twice that *"the fix is a
+hand-written probe"* while `bootstrap_probes.py` and `concept-probes-tuned.yaml`
+existed only for concepts. The instruction pointed at something that did not
+exist.
+
+### Breadth and depth are separate terms
+
+```
+if blocking:               BLOCKED
+elif major_open:           NEEDS-REVISION
+elif not breadth_complete: PASS-PARTIAL     # subjects nobody opened
+elif not depth_complete:   PASS-SAMPLED     # subjects read only in part
+else:                      PASS
+```
+
+They are separate because they close by different work and one of them cannot
+always be closed at all. Breadth closes on its own; depth needs human judgement
+about a subject's scope. Breadth outranks depth because *"nobody opened it"* is a
+worse state than *"we read part of it"*.
+
+Two signatures, two waivers. `manuscript_gate.coverage` (breadth) should feel
+expensive — it means nobody looked. `manuscript_gate.depth` is the routine one:
+some rules genuinely reach more instances than one agent run can judge, and that
+is a fact about the book rather than a shortfall in the audit. Each is stale and
+does not count when its signature stops matching.
+
+### The ladder: `bible/rule-probes-tuned.yaml`
+
+The rule-side twin of `concept-probes-tuned.yaml`, and now the file those two
+comments were pointing at. Narrow a rule's `key_terms`, add `require_terms`,
+scope it with `scope_units` / `scope_heading`, drop instances with
+`exclude_pattern`, or `split` one broad rule into scoped sub-rules that are
+audited and tracked separately.
+
+**Narrowing is a claim about a rule's SCOPE, and it is auditable.** If a rule
+genuinely governs 87 code blocks across nine chapters, do not shrink it to make a
+number go down — leave it sampled and waive the depth. A narrowing written to
+reach `PASS` is a lie the gate then repeats back as a clean bill of health. The
+template says this before it shows the syntax.
+
+For concepts, `home_cap` is now settable **per probe**, so one sprawling concept
+can be read in full without raising the global dial.
+
+New: `templates/rule-probes-tuned.yaml`.
+
+### The worklist, generated
+
+An escape hatch nobody can find is not an escape hatch. The gate writes every
+still-intractable rule — ranked by instance count, with a commented stub each —
+to `round-N/rule-probes-proposed.yaml`. Depth closes one rule at a time, so the
+work starts from the real list rather than from a blank file. Same reason the
+verification plan is generated from `deferred` rather than described.
+
+### Also
+
+- A check that could not run at all now leaves a `blocked` coverage record and
+  says why. MG-1 with no probes used to leave silence, which the verdict read as
+  "subjects nobody opened" — sending the reader to dispatch auditors when the
+  real problem was a missing input file. Silence reading as something else is the
+  defect class this gate exists for; it applies to the gate itself.
+- `build_concept_dossier.py` no longer exits when there are no probes. It reports
+  and writes an empty coverage record, so "nothing to audit" and "the emitter
+  fell over" stay distinguishable.
+- `references/manuscript-gate.md` § Calibrating a check gains the transferable
+  rule: **before shipping any hard criterion, name the specific work that moves
+  it from false to true, and check that a person can actually do that work.** If
+  you cannot name it, you have written a percentage floor with extra steps.
+- `selftest.py` grows the depth cases, on a corpus generated rather than checked
+  in because the shape is arithmetic — a rule needs three key terms whose union
+  clears the tractability ceiling while each stays under the `--df-ceiling`, and
+  that only holds at a corpus size no hand-written fixture would carry. 62
+  assertions, all deterministic.
+
+## 3.2 — The verdict learns what it did not look at
+
+Written from a review of v3.1 against the fix phase of the same 18-chapter
+technical book. v3.1 found the defects that had escaped writing; what it could
+not do was tell you how much of the book it had looked at.
+
+**The hole was one hole.** The verdict was `f(findings)`. Nothing in it knew that
+a book could reach `PASS` → `phase: complete` having audited **30 of 474
+candidate rules**, and that the "two consecutive quiet rounds" criterion was
+satisfied *by construction*: rounds 2+ audited only edited passages, their
+propagation set, and open findings, so the 444 unselected candidates were never
+looked at, never produced a finding, and made every later round quiet. The quota
+was documented as a cost dial and behaved as a permanent ceiling.
+
+Three files already said a sample is not an all-clear — the rule auditor's *"do
+not conclude the rule is clean"*, the findings schema, the report template. The
+verdict did not know. That is the same class of defect the skill exists to
+prevent, one level up.
+
+### Coverage is a computed term of the verdict
+
+```
+if blocking:                 BLOCKED
+elif major_open:             NEEDS-REVISION
+elif not complete_coverage:  PASS-PARTIAL      # new
+else:                        PASS
+```
+
+`complete_coverage` is binary — `covered == eligible_candidates` **and** zero
+sampled subjects, for every enabled semantic check — and not a percentage floor,
+because a floor invites arguing the number and the day it is expensive it gets
+waived out of habit. `PASS` means *all of it was looked at*. `PASS-PARTIAL` means
+*X of Y, and here is the ranked list of what was not*.
+
+`PASS-PARTIAL` does not block the work. It blocks the claim: `phase: complete`
+needs `PASS`, or `PASS-PARTIAL` plus a `manuscript_gate.coverage` waiver carrying
+a **signature of the exact numbers**. A waiver whose signature no longer matches
+is reported stale and does not count.
+
+Two axes, reported separately: breadth (`covered/eligible`) and depth (subjects
+judged from a sample of themselves). A run with 100% breadth and 15% depth is not
+a complete run.
+
+### The rounds drain the pool
+
+`reviews/manuscript-gate-<date>/audited.yaml` — cumulative, keyed by subject id
+**and fingerprint**. The emitters skip what it records; those subjects leave the
+pool but stay in the denominator. Round 2 therefore selects the *next* slice by
+ranking, coverage grows monotonically, and `--top` is finally the cost dial its
+comment always claimed. The fingerprint spans everything an audit read (a rule
+plus its instances, all of a concept's passages), so an edited subject returns to
+the queue — the claim index's asymmetry, applied to the ledger.
+
+Without this, `PASS-PARTIAL` would be a state nothing could leave.
+
+### MG-7 — a fixed defect must not come back
+
+`bible/do-not-touch.md` protects text that is correct; `selftest.py` tests the
+scripts. Nothing asserted *"this defective formulation must not return"*.
+Evidence: closing one defect — a chapter collapsing three set-modifier positions
+into two slots, which took **four independent passes** to find — needed a
+hand-inverted gate assertion and hand-added linter pins.
+
+`bible/fixed-defects.yaml` + `scripts/check_fixed_defects.py`, in the
+deterministic sweep, whole book, every round. A reappearance is `critical` by
+default. The load-bearing part is `allow_in`: **the text that corrects a defect
+usually quotes the defective form in order to teach against it**, so a literal
+pin fires on the fix itself. Pin the claim, not the code.
+
+New: `templates/fixed-defects.yaml`, `scripts/check_fixed_defects.py`.
+
+### Content anchors, and `--heal`
+
+Measured during one day of fixes: line-keyed references broke **three times, and
+two of those were caused by adding a section**. A gate that shouts when nothing
+happened gets switched off in a week.
+
+Every persisted reference now carries a short verbatim anchor beside its line
+number, and resolution distinguishes the case a line number cannot express:
+
+```
+anchor at the recorded line     OK
+anchor nowhere in the file      EDITED   — the passage was CHANGED
+anchor elsewhere, exactly once  DRIFT    — it MOVED; --heal repairs it
+anchor matches more than once   AMBIGUOUS
+```
+
+`scripts/resolve_anchors.py --heal` rewrites stale numbers after a fix pass, and
+deliberately refuses to touch `EDITED` — repairing one would silently attach a
+verified-correct anchor to text nobody checked.
+
+New: `scripts/resolve_anchors.py`, `scripts/bookkit/anchors.py`.
+
+### The economy is visible
+
+The token cost sits on the same line as the dial in `meta.yaml` (~170–230k tokens
+per lens run, so `top_rules: 30` × `passes_per_subject: 2` ≈ 12M tokens for MG-2
+alone). The cut is stated as surface rather than as configuration — *"444
+candidates will not be looked at — 94% of the eligible surface"* — and the cut
+list reaches the human packet **ranked**, so three specific candidates can be
+promoted into the next round without recalibrating anything.
+
+### Also
+
+- `round-N/coverage-summary.md` is generated: the report's header and its
+  `What ran` table are computed, not written by an agent from memory.
+- `state.json` records coverage per round; the report's round history has a
+  coverage column. Two quiet rounds at the same coverage are one round run twice.
+- A findings file is now also a coverage record — auditors write one **even when
+  they found nothing**, because a subject with no file is a subject nobody read.
+- `bookkit/__init__.py` forces UTF-8 on stdout/stderr, so the scripts stop dying
+  with a `UnicodeEncodeError` halfway through their own report on a stock Windows
+  console.
+- `selftest.py` gains the two directions of the coverage case (a one-subject
+  quota with zero findings must be `PASS-PARTIAL`; full coverage with zero
+  findings must be `PASS`), plus pool-draining, re-queue, MG-7 with its `allow_in`
+  exemption, and the full anchor lifecycle. 54 assertions, all deterministic.
+
+Unchanged on purpose, because breaking them would be expensive: `select_rules()`
+as the single selection function, the inverted omission default (`D6`/`N2` → `N2`
+but `D9`/`N2` → `D9`), the bidirectional selftest, and `violation_kind` as the
+anti-memorization check.
+
 ## 3.1 — The manuscript gate
 
 Written from a post-mortem of a finished 18-chapter, ~156,000-word technical

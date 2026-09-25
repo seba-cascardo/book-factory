@@ -32,14 +32,25 @@ HOW IT IS USED
 
 RULES FOR WRITING AN ENTRY
 
-1. **Never write an entry without its counter-evidence.** An anchor with no
+1. **The `**Anchor:**` line is the key; the line number is a hint.** Every entry
+   carries a verbatim substring of the passage it protects. Line numbers go stale
+   the moment anyone inserts a section above them — measured: during one day of
+   fixes on the reference book, references broke three times and two of the three
+   breaks were caused by ADDING a section, not by a defect. A warning that fires
+   when nothing happened is a warning people learn to ignore.
+   `scripts/resolve_anchors.py` resolves entries by their anchor and `--heal`
+   rewrites the stale numbers; an entry with no anchor cannot be healed and is
+   reported as `NO-ANCHOR`.
+2. **Never write an entry without its counter-evidence.** An anchor with no
    reason is just an assertion, and the next auditor will overrule it — correctly.
-2. **Quote the source verbatim.** "Verified against the docs" is not an anchor.
-   `path:line` plus the sentence is.
-3. **Say what the wrong reading was**, if there was one. The near-miss is the
+3. **Quote the source verbatim.** "Verified against the docs" is not an anchor.
+   `path:line` plus the sentence is. Note that this is a different quote from
+   the `**Anchor:**` line: the source quote lives in another file and cannot
+   locate anything here.
+4. **Say what the wrong reading was**, if there was one. The near-miss is the
    most useful part: it tells the next reader what trap to avoid, not just what
    the answer is.
-4. **Anchors expire when the pinned version changes.** A behavior verified
+5. **Anchors expire when the pinned version changes.** A behavior verified
    against version X is not verified against version Y. Note the pin.
 
 Delete this comment block and the example when the first real entry lands.
@@ -48,6 +59,9 @@ Delete this comment block and the example when the first real entry lands.
 ## Anchors
 
 ### `final/unit-NN.md:LINE` — [one-line description of the claim]
+
+**Anchor:** "[verbatim substring of the protected passage — long enough to be
+unique in the file, short enough to survive a neighbouring edit]"
 
 **Verified against** `bible/sources/<path>.md:LINE`, pinned to `[version]`:
 
@@ -69,6 +83,8 @@ authoritative source that contradicts the page quoted above.
 <!-- Example of a filled entry, from the reference case:
 
 ### `final/ch-03.md:17` — the optimized/standard/source hierarchy
+
+**Anchor:** "about 100 times faster than loading the database"
 
 **Verified against** `bible/sources/manage-data/manage-data.md:12177`, pinned to
 May 2025:

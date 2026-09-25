@@ -274,6 +274,344 @@ def test_verification_plan(tmp: Path) -> None:
           "an entry nobody can execute is an entry nobody runs — say so")
 
 
+def _clean_corpus(tmp: Path, name: str) -> Path:
+    """Two lint-clean fixture units. Coverage tests need a corpus whose verdict
+    is not already BLOCKED by unit-01's deliberate render defects."""
+    work = tmp / name
+    (work / "final").mkdir(parents=True)
+    for unit in ("unit-02.md", "unit-03.md"):
+        shutil.copy(FIXTURES / "final" / unit, work / "final" / unit)
+    return work
+
+
+def _write_findings(round_dir: Path, check: str, subjects: list[str],
+                    sampled: bool = False) -> None:
+    fdir = round_dir / "findings"
+    fdir.mkdir(parents=True, exist_ok=True)
+    for s in subjects:
+        (fdir / f"{check}-{s}.json").write_text(json.dumps({
+            "check": check, "lens": "pairs", "subject": s,
+            "sampled": sampled, "findings": []}), encoding="utf-8")
+
+
+def _verdict(log: str) -> str:
+    for line in log.splitlines():
+        if "VERDICT:" in line:
+            return line.split("VERDICT:")[1].strip()
+    return "(none)"
+
+
+def test_coverage_verdict(tmp: Path) -> None:
+    print("\nmanuscript_gate — the verdict knows how much it did NOT look at")
+    work = _clean_corpus(tmp, "cov")
+    args = ["--root", str(work), "--units", "final/*.md", "--date", "2026-01-01"]
+    rd = work / "reviews" / "manuscript-gate-2026-01-01" / "round-1"
+
+    code, log = run("manuscript_gate.py", args + ["--round", "1", "--top-concepts", "1"])
+    cov = json.loads((rd / "coverage-MG-1.json").read_text(encoding="utf-8"))
+    check("the emitter writes a coverage record", cov.get("eligible_candidates", 0) > 0,
+          "without it the verdict has no coverage term and PASS means nothing")
+    check("eligible is bigger than selected under a tight quota",
+          cov["eligible_candidates"] > cov["selected"],
+          f"got {cov['selected']}/{cov['eligible_candidates']}")
+    check("what was cut is recorded, ranked", bool(cov.get("cut")),
+          "a silent truncation reads as full coverage")
+
+    # The case §3.1.5 exists for: no findings at all, and still not a PASS.
+    _write_findings(rd, "MG-1", [s["id"] for s in cov["subjects"]])
+    _write_findings(rd, "MG-4", ["manuscript"])
+    code, log = run("manuscript_gate.py", args + ["--round", "1", "--verdict-only"])
+    check("a partial sweep with zero findings is PASS-PARTIAL, never PASS",
+          _verdict(log) == "PASS-PARTIAL",
+          f"got {_verdict(log)} — a book can reach `complete` having audited 30 of "
+          f"474 candidates if the verdict is f(findings) alone")
+    check("PASS-PARTIAL names the numbers, not just the state",
+          "coverage" in log.lower() and "/" in log)
+
+    print("manuscript_gate — full coverage with no findings IS a PASS")
+    work2 = _clean_corpus(tmp, "cov-full")
+    args2 = ["--root", str(work2), "--units", "final/*.md", "--date", "2026-01-01"]
+    rd2 = work2 / "reviews" / "manuscript-gate-2026-01-01" / "round-1"
+    run("manuscript_gate.py", args2 + ["--round", "1"])
+    cov2 = json.loads((rd2 / "coverage-MG-1.json").read_text(encoding="utf-8"))
+    _write_findings(rd2, "MG-1", [s["id"] for s in cov2["subjects"]])
+    _write_findings(rd2, "MG-4", ["manuscript"])
+    code, log = run("manuscript_gate.py", args2 + ["--round", "1", "--verdict-only"])
+    check("no quota, no sampling, every subject audited -> PASS",
+          _verdict(log) == "PASS",
+          f"got {_verdict(log)} — PASS-PARTIAL has to be a state you can LEAVE, or "
+          f"it is just a broken gate. log tail: {log.strip()[-400:]}")
+
+    print("manuscript_gate — a subject nobody audited does not count as covered")
+    work3 = _clean_corpus(tmp, "cov-gap")
+    args3 = ["--root", str(work3), "--units", "final/*.md", "--date", "2026-01-01"]
+    rd3 = work3 / "reviews" / "manuscript-gate-2026-01-01" / "round-1"
+    run("manuscript_gate.py", args3 + ["--round", "1"])
+    cov3 = json.loads((rd3 / "coverage-MG-1.json").read_text(encoding="utf-8"))
+    _write_findings(rd3, "MG-1", [s["id"] for s in cov3["subjects"][:-1]])
+    _write_findings(rd3, "MG-4", ["manuscript"])
+    code, log = run("manuscript_gate.py", args3 + ["--round", "1", "--verdict-only"])
+    check("one missing findings file blocks the PASS",
+          _verdict(log) == "PASS-PARTIAL",
+          "a dispatched subject with no findings file was not audited; counting it "
+          "as covered would make the whole measurement decorative")
+
+
+def _intractable_corpus(tmp: Path, name: str, tuned: str = "") -> Path:
+    """A corpus with one rule too wide to judge in a single agent run.
+
+    Built rather than checked in, because the shape is arithmetic: the rule needs
+    three key terms whose union exceeds the tractability ceiling while each term
+    stays under the --df-ceiling, and that only holds at a corpus size no
+    hand-written fixture would carry.
+    """
+    work = tmp / name
+    (work / "final").mkdir(parents=True)
+    (work / "bible").mkdir(parents=True)
+    L = ["# Unit 01", "", "## The rule", "",
+         "You must never call `AlphaFn`, `BetaFn` or `GammaFn` on a loaded field.", ""]
+    marks = ["AlphaFn"] * 18 + ["BetaFn"] * 18 + ["GammaFn"] * 18 + [""] * 86
+    for i, mark in enumerate(marks):
+        L += [f"## Example {i}", "", "```sql",
+              f"LOAD {mark or 'Plain'}(Field) RESIDENT Stage{i};", "```", ""]
+    (work / "final" / "unit-01.md").write_text("\n".join(L), encoding="utf-8")
+    # Declare the concept probe rather than leaving it to the frequency
+    # bootstrap: this corpus is about MG-2's depth, and a heuristic deciding how
+    # many concepts exist would make the assertion depend on something the test
+    # is not measuring. One unit means nothing spans two, so MG-1's eligible
+    # surface is legitimately empty.
+    (work / "bible" / "concept-probes.yaml").write_text(
+        "probes:\n  - id: loaded_field\n    include: 'loaded field'\n", encoding="utf-8")
+    if tuned:
+        (work / "bible" / "rule-probes-tuned.yaml").write_text(tuned, encoding="utf-8")
+    return work
+
+
+def test_depth_axis(tmp: Path) -> None:
+    print("\nmanuscript_gate — breadth and depth are separate terms")
+    work = _intractable_corpus(tmp, "depth")
+    args = ["--root", str(work), "--units", "final/*.md", "--date", "2026-01-01"]
+    rd = work / "reviews" / "manuscript-gate-2026-01-01" / "round-1"
+
+    run("manuscript_gate.py", args + ["--round", "1"])
+    cov = json.loads((rd / "coverage-MG-2.json").read_text(encoding="utf-8"))
+    check("the wide rule is eligible and emitted", cov["selected"] == 1,
+          f"got {cov['selected']}/{cov['eligible_candidates']}")
+    check("it is flagged as judgeable only from a sample",
+          cov["sampled_within"] == 1,
+          f"got sampled_within={cov['sampled_within']} — the rule reaches "
+          f"{cov['subjects'][0]['instances'] if cov['subjects'] else '?'} instances")
+
+    proposed = rd / "rule-probes-proposed.yaml"
+    check("the intractable rule gets a worklist entry", proposed.exists()
+          and "AlphaFn" in proposed.read_text(encoding="utf-8"),
+          "an escape hatch nobody can find is not an escape hatch: depth closes by "
+          "narrowing these one at a time, so the toolkit owes a ranked list rather "
+          "than a blank file")
+
+    # Breadth short AND depth short: breadth wins, because 'nobody opened it' is
+    # a worse state than 'we read part of it'.
+    _write_findings(rd, "MG-4", ["manuscript"])
+    code, log = run("manuscript_gate.py", args + ["--round", "1", "--verdict-only"])
+    check("an unopened subject outranks a sampled one",
+          _verdict(log) == "PASS-PARTIAL", f"got {_verdict(log)}")
+
+    _write_findings(rd, "MG-2", [s["id"] for s in cov["subjects"]], sampled=True)
+    code, log = run("manuscript_gate.py", args + ["--round", "1", "--verdict-only"])
+    check("every subject opened but one only sampled -> PASS-SAMPLED",
+          _verdict(log) == "PASS-SAMPLED",
+          f"got {_verdict(log)} — collapsing the two axes made PASS unreachable by "
+          f"construction: 221 of 454 rules on the reference book were over the "
+          f"ceiling, so `sampled == 0` could never hold however many rounds ran")
+    check("the verdict names the way out of the depth axis",
+          "rule-probes-tuned" in log,
+          "a criterion nobody can satisfy decays exactly like a floor nobody "
+          "defends; the difference is whether there is a ladder")
+
+    print("manuscript_gate — narrowing the rule closes the depth axis")
+    work2 = _intractable_corpus(tmp, "depth-tuned", tuned=(
+        "rules:\n"
+        "  - id: unit-01-5-alphafn\n"
+        "    key_terms: [AlphaFn]\n"
+        "    note: the rule is about AlphaFn; the other two are taught elsewhere\n"))
+    args2 = ["--root", str(work2), "--units", "final/*.md", "--date", "2026-01-01"]
+    rd2 = work2 / "reviews" / "manuscript-gate-2026-01-01" / "round-1"
+    code, log = run("manuscript_gate.py", args2 + ["--round", "1"])
+    cov2 = json.loads((rd2 / "coverage-MG-2.json").read_text(encoding="utf-8"))
+    check("a tuned probe brings the rule under the ceiling",
+          cov2["sampled_within"] == 0,
+          f"got sampled_within={cov2['sampled_within']}; log tail: {log.strip()[-300:]}")
+
+    _write_findings(rd2, "MG-2", [s["id"] for s in cov2["subjects"]])
+    _write_findings(rd2, "MG-4", ["manuscript"])
+    code, log = run("manuscript_gate.py", args2 + ["--round", "1", "--verdict-only"])
+    check("depth closed by WORK reaches a real PASS", _verdict(log) == "PASS",
+          f"got {_verdict(log)} — this is the whole point of the ladder: PASS has "
+          f"to be reachable without a waiver. log tail: {log.strip()[-400:]}")
+
+
+def test_pool_drains(tmp: Path) -> None:
+    print("\nmanuscript_gate — round 2 audits what round 1 did not")
+    work = _clean_corpus(tmp, "drain")
+    args = ["--root", str(work), "--units", "final/*.md", "--date", "2026-01-01"]
+    run_dir = work / "reviews" / "manuscript-gate-2026-01-01"
+
+    run("manuscript_gate.py", args + ["--round", "1", "--top-concepts", "1"])
+    r1 = json.loads((run_dir / "round-1" / "coverage-MG-1.json").read_text("utf-8"))
+    first = [s["id"] for s in r1["subjects"]]
+    _write_findings(run_dir / "round-1", "MG-1", first)
+    run("manuscript_gate.py", args + ["--round", "1", "--verdict-only"])
+    check("the audit ledger is persisted", (run_dir / "audited.yaml").exists(),
+          "without it round 2 re-selects round 1's slice and the quota is a "
+          "permanent ceiling rather than a cost dial")
+
+    code, log = run("manuscript_gate.py", args + ["--round", "2", "--top-concepts", "1"])
+    r2 = json.loads((run_dir / "round-2" / "coverage-MG-1.json").read_text("utf-8"))
+    second = [s["id"] for s in r2["subjects"]]
+    check("round 2 selects different subjects", bool(second) and not set(second) & set(first),
+          f"round 1 audited {first}, round 2 emitted {second} — rounds 2+ that "
+          f"re-read the same slice satisfy 'two quiet rounds' by construction")
+    check("already-audited subjects stay in the denominator",
+          r2["eligible_candidates"] == r1["eligible_candidates"],
+          "shrinking the denominator would manufacture the completeness this "
+          "whole measurement exists to report")
+    check("coverage grows between rounds",
+          len(r2["already_audited"]) == len(first), f"got {r2['already_audited']}")
+
+    # An edited subject comes back. This is propagation, applied to the ledger:
+    # edit a passage OF THE CONCEPT round 1 audited, not just any passage.
+    dossier = (run_dir / "round-1" / "dossiers" / f"{first[0]}.md").read_text("utf-8")
+    site = next(l for l in dossier.splitlines() if l.startswith("### final/"))
+    loc = site.split()[1]
+    rel, _, ln = loc.rpartition(":")
+    edited = work / rel
+    lines = edited.read_text(encoding="utf-8").splitlines()
+    lines[int(ln) - 1] += " An edit that changes what this passage claims."
+    edited.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    run("manuscript_gate.py", args + ["--round", "3", "--top-concepts", "1"])
+    r3 = json.loads((run_dir / "round-3" / "coverage-MG-1.json").read_text("utf-8"))
+    check("an edited subject is re-queued", bool(r3["requeued"]),
+          "a subject whose text changed since it was audited must go back into "
+          "the pool, or the ledger becomes a claim about a book that no longer exists")
+
+
+def test_fixed_defects(tmp: Path) -> None:
+    print("\ncheck_fixed_defects — a fixed defect cannot walk back in")
+    work = tmp / "fixed"
+    (work / "final").mkdir(parents=True)
+    (work / "bible").mkdir(parents=True)
+    (work / "final" / "unit-01.md").write_text(
+        "# Unit 01\n\n"
+        "## The regression\n\n"
+        "The set modifier has two slots, and the outer one wins.\n\n"
+        "## The teaching passage\n\n"
+        "Writers reach for the two slots model here.\n"
+        "That is the one that looks like the fix and is not.\n",
+        encoding="utf-8")
+    (work / "bible" / "fixed-defects.yaml").write_text(
+        "defects:\n"
+        "  - id: FIX-01\n"
+        "    what: the chapter collapsed three positions into two slots\n"
+        "    severity_if_back: critical\n"
+        "    forbid:\n"
+        "      - kind: regex\n"
+        "        pattern: '\\btwo[- ]slots?\\b'\n"
+        "    allow_in:\n"
+        "      - anchor: \"That is the one that looks like the fix and is not\"\n"
+        "        why: the corrected text quotes the wrong form to teach against it\n",
+        encoding="utf-8")
+
+    out = work / "fd.json"
+    code, log = run("check_fixed_defects.py", [
+        "--root", str(work), "--units", "final/*.md", "--json", str(out), "--quiet"])
+    data = json.loads(out.read_text(encoding="utf-8"))
+    hits = [f["location"] for f in data["findings"]]
+    check("the reappearance is found", len(hits) == 1,
+          f"got {hits} — nothing else in the toolkit asserts 'this defective "
+          f"formulation must not return'")
+    check("a reappearance is critical by default",
+          data["counts"]["critical"] == 1, str(data["counts"]))
+    check("the teaching passage is NOT flagged", bool(data["exemptions"]),
+          "the text that corrects a defect quotes the defective form on purpose; "
+          "a pin that fires on the fix gets switched off within a week")
+
+    print("check_fixed_defects — silence when nothing regressed")
+    (work / "final" / "unit-01.md").write_text(
+        "# Unit 01\n\nThe set modifier has three positions, and each is different.\n",
+        encoding="utf-8")
+    code, log = run("check_fixed_defects.py", [
+        "--root", str(work), "--units", "final/*.md", "--json", str(out), "--quiet"])
+    data = json.loads(out.read_text(encoding="utf-8"))
+    check("clean text produces no finding", not data["findings"],
+          f"false positives: {data['findings']}")
+
+
+def test_anchors(tmp: Path) -> None:
+    print("\nresolve_anchors — a moved passage is repaired, a changed one is not")
+    work = tmp / "anchors"
+    (work / "final").mkdir(parents=True)
+    (work / "bible").mkdir(parents=True)
+    unit = work / "final" / "unit-01.md"
+    unit.write_text(
+        "# Unit 01\n\n"
+        "## Baselines\n\n"
+        "Optimized mode is about 100 times faster than loading the database.\n",
+        encoding="utf-8")
+    dnt = work / "bible" / "do-not-touch.md"
+    dnt.write_text(
+        "# Anchors\n\n"
+        "### `final/unit-01.md:5` — the baseline hierarchy\n\n"
+        "**Anchor:** \"about 100 times faster than loading the database\"\n\n"
+        "**What it actually says:** the 100x is against the database.\n",
+        encoding="utf-8")
+    args = ["--root", str(work), "--units", "final/*.md"]
+
+    out = work / "a.json"
+    run("resolve_anchors.py", args + ["--json", str(out), "--quiet"])
+    check("an intact reference resolves OK",
+          json.loads(out.read_text("utf-8"))["counts"].get("OK") == 1,
+          json.dumps(json.loads(out.read_text("utf-8"))["rows"]))
+
+    # ADDING a section is what broke the references three times in one day.
+    unit.write_text("# Unit 01\n\n## A new section\n\nInserted.\n\n"
+                    + unit.read_text(encoding="utf-8").split("\n", 1)[1],
+                    encoding="utf-8")
+    run("resolve_anchors.py", args + ["--json", str(out), "--quiet"])
+    data = json.loads(out.read_text("utf-8"))
+    check("an insertion above reports DRIFT, not a defect",
+          data["counts"].get("DRIFT") == 1,
+          f"got {data['counts']} — two of three observed breakages were caused by "
+          f"adding a section, and a check that shouts when nothing happened gets "
+          f"switched off")
+
+    run("resolve_anchors.py", args + ["--heal", "--quiet"])
+    run("resolve_anchors.py", args + ["--json", str(out), "--quiet"])
+    check("--heal repairs the line from the anchor",
+          json.loads(out.read_text("utf-8"))["counts"].get("OK") == 1,
+          "without this, keeping references true is recurring manual work, which "
+          "means it does not happen")
+
+    # Now CHANGE the passage. This is the case a line number cannot express.
+    text = unit.read_text(encoding="utf-8").replace(
+        "about 100 times faster than loading the database",
+        "roughly ten times faster than a standard load")
+    unit.write_text(text, encoding="utf-8")
+    run("resolve_anchors.py", args + ["--json", str(out), "--quiet"])
+    data = json.loads(out.read_text("utf-8"))
+    check("an edited passage reports EDITED, not DRIFT",
+          data["counts"].get("EDITED") == 1,
+          f"got {data['counts']} — 'it moved' and 'they changed it' need opposite "
+          f"responses, and that distinction is the whole point of the anchor")
+
+    before = dnt.read_text(encoding="utf-8")
+    run("resolve_anchors.py", args + ["--heal", "--quiet"])
+    check("--heal leaves an EDITED reference alone",
+          dnt.read_text(encoding="utf-8") == before,
+          "re-pointing it would silently attach a verified-correct anchor to text "
+          "nobody checked")
+
+
 def test_sync_manuscript(tmp: Path) -> None:
     print("\nsync_manuscript — deterministic and idempotent")
     work = tmp / "sync"
@@ -303,6 +641,11 @@ def main() -> int:
         test_propagation(tmp)
         test_manuscript_gate(tmp)
         test_verification_plan(tmp)
+        test_coverage_verdict(tmp)
+        test_depth_axis(tmp)
+        test_pool_drains(tmp)
+        test_fixed_defects(tmp)
+        test_anchors(tmp)
         test_sync_manuscript(tmp)
 
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
