@@ -1,0 +1,63 @@
+# drafts/ch-NN/scorecard.yaml — Critic's machine-readable rubric output
+#
+# See references/rubric.md for the full spec. Every item listed in the
+# applicable rubric (technical or literary) produces a row here. Items the
+# Critic cannot evaluate (e.g., reader_pov-* in fast mode) get
+# status: not_applicable with a one-line reason.
+
+schema_version: "2.3"
+chapter: "ch-NN"
+mode: "fast"                # fast | full
+generated_at: "YYYY-MM-DDTHH:MM:SSZ"
+model: "claude-opus-4-6"
+
+# The verdict is COMPUTED from the rubric, not asserted. See rubric.md
+# "How the verdict is computed" for the rule. The skill derives the
+# verdict from this file on read; the Critic does NOT set it directly.
+# (The Critic may cache its computed verdict under `computed_verdict`
+# for readability in critique.md; the skill verifies the computation.)
+
+computed_verdict: "PASS"    # PASS | REVISE | REWORK | ESCALATE
+loopback_target: null       # Writer | Editor | Humanizer | Reader_POV_plus_Humanizer | null (for PASS/REWORK-to-Writer)
+
+totals:
+  critical_pass: 0
+  critical_fail: 0
+  significant_pass: 0
+  significant_fail: 0
+  minor_pass: 0
+  minor_fail: 0
+  not_applicable: 0
+
+# Every item. Order: families in the order listed in rubric.md.
+items:
+  - id: scope-1
+    rubric: scope
+    name: "Chapter delivers the outline purpose"
+    severity: critical
+    status: pass               # pass | fail | not_applicable
+    evidence: null             # for fails: quoted lines or file:line
+    loopback_target: null      # for fails: who owns the fix
+
+  - id: scope-2
+    rubric: scope
+    name: "No out-of-scope topics surface here"
+    severity: significant
+    status: pass
+    evidence: null
+    loopback_target: null
+
+  # … (continue for every applicable rubric item) …
+
+# Observations — free-form notes that aren't rubric hits but worth
+# flagging. The Critic writes these; the human reads them alongside the
+# scorecard.
+observations:
+  - "Voice in section 3 drifts slightly more casual than the calibration. Not a fail on voice-7, but worth watching in ch-NN+1."
+  - "Chapter opens a new forward reference to 'deferred actions' — confirm this lands in the outline for a later chapter."
+
+# Cost observability — the Critic appends its own call cost.
+cost:
+  input_tokens: 0
+  output_tokens: 0
+  model: "claude-opus-4-6"

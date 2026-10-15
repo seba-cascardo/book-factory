@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Internal audits and reviews: local only (this repo is public)
+docs/reviews/

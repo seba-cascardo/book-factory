@@ -2,7 +2,7 @@
 
 Why the literary rules are what they are. Agents do not load this file; agent
 files keep the rule and, at most, a `Why:` pointer to a section here. Sources
-are summarized from `REVIEW-v3.3-integral.md` (§ 5.1, § 7, § 9); preprints
+are summarized from `docs/reviews/REVIEW-v3.3-integral.md` (§ 5.1, § 7, § 9); preprints
 marked *unverified* were reported by a search agent and not checked.
 
 ## The evidence that drove v3.4

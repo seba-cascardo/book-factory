@@ -1,0 +1,229 @@
+# bible/meta.yaml — technical project metadata
+#
+# The pipeline reads this constantly. Every agent's context starts here.
+# Keep it short, concrete, and up to date.
+
+project:
+  type: "technical"
+  subtype: "tutorial"     # tutorial | reference | cookbook | textbook | opinion
+                          # See references/setup-technical.md § Sub-Phase 0 for
+                          # how the subtype reshapes the Writer/Critic prompts.
+  title: "[working title]"
+  subtitle: "[optional — the promise in one line]"
+  working_title: true     # set to false when the title is final
+
+audience:
+  # The single most important block. Every agent uses this.
+  primary: "[one-sentence reader persona — who they are, what they know,
+             what they're trying to do]"
+  prerequisites: "[what the reader MUST already know]"
+  not_for: "[who this book is NOT for — helps the Writer resist going wide]"
+  experience_level: "beginner | intermediate | advanced"
+  # beginner   = learning the topic for the first time
+  # intermediate = comfortable with the basics, wants depth/patterns
+  # advanced   = expert reference, pushing the edges
+
+scope:
+  # See bible/scope.md for the full version. This is the headline.
+  covers: "[one-sentence summary of what the book teaches]"
+  does_not_cover: "[what's explicitly out of scope]"
+  depth: "tutorial | reference | tutorial+reference | cookbook"
+
+pinned_versions:
+  # Each version the book assumes. The Technical Reviewer (Axis A) enforces
+  # these via `validation_surface` below; the Editor (fast) or Humanizer (full)
+  # applies advisory version-drift fixes downstream.
+  # Example:
+  # python: "3.12"
+  # kubectl: "1.29"
+  # postgres: "16"
+  {}
+
+target_version:
+  # The version of the main subject this book teaches. Used by the Technical
+  # Reviewer (Axis B) together with per-source "version drift rules" in
+  # bible/sources/sources.md. If a grounding source covers a different
+  # version, the reviewer classifies divergences in the affected feature
+  # areas as "version drift, not error" — advisory only, not a REVISE
+  # loopback.
+  #
+  # Leave as null if the subject isn't version-pinned (classical CS topics,
+  # timeless patterns, etc.). Otherwise declare it explicitly.
+  #
+  # Examples:
+  #   subject: "Qlik Sense Enterprise"
+  #   version: "May 2024"
+  #   released: "2024-05"
+  subject: null
+  version: null
+  released: null
+
+validation_surface:
+  # What parts of this book have a MACHINE-VERIFIABLE surface and how to check
+  # them. The Technical Reviewer loads sub-prompts for every surface listed
+  # here. See references/validation-surface.md for the catalogue of surfaces
+  # and how to pick them.
+  #
+  # Different technical domains offer different surfaces. The point is not to
+  # ban un-verifiable content — it's to catch everything that COULD be
+  # checked automatically.
+  #
+  # Shape per entry: { surface: <id>, applies_to: [<file globs>],
+  #                    runner: <command or tool>, pins: {<version keys>} }
+  #
+  # Common surfaces:
+  # - python_exec            run python snippets in a sandbox, capture output
+  # - js_node_exec           run node snippets
+  # - bash_exec              run shell commands (careful — sandbox required)
+  # - sql_dialect_check      parse SQL against a target dialect
+  # - yaml_schema_validate   validate against declared JSON Schema
+  # - json_schema_validate   same for JSON
+  # - linter                 static analysis (ruff, eslint, shellcheck, etc.)
+  # - qlik_set_analysis      syntactic check of Qlik set analysis patterns
+  # - qlik_load_script       parse Qlik load script against schema + doc rules
+  # - qlik_expression        validate Qlik frontend expressions (functions exist
+  #                          in target_version, syntax is well-formed)
+  # - doc_cross_ref          every function/command mentioned exists in the
+  #                          grounding source docs
+  # - proof_recheck          re-derive math/proof steps line by line
+  # - empty                  no machine surface; reviewer falls back to prose
+  #                          audit + grounding library
+  #
+  # Example for a Qlik Sense book:
+  # surfaces:
+  #   - surface: qlik_set_analysis
+  #     applies_to: ["**/*.qvs", "chapters/**/*.md"]
+  #     runner: "internal:qlik_set_analysis_linter"
+  #     pins: { qlik_version: "May 2024" }
+  #   - surface: qlik_expression
+  #     applies_to: ["chapters/**/*.md"]
+  #     runner: "internal:qlik_expression_linter"
+  #     pins: { qlik_version: "May 2024" }
+  #   - surface: doc_cross_ref
+  #     applies_to: ["chapters/**/*.md"]
+  #     runner: "internal:doc_xref"
+  #     pins: { grounding: "bible/sources/" }
+  #
+  # Example for a Python book:
+  # surfaces:
+  #   - surface: python_exec
+  #     applies_to: ["chapters/**/*.py", "chapters/**/*.md"]
+  #     runner: "docker run --rm -v $PWD:/w python:3.12 python"
+  #     pins: { python: "3.12" }
+  #   - surface: linter
+  #     applies_to: ["chapters/**/*.py"]
+  #     runner: "ruff check"
+  #     pins: { ruff: "0.5.x" }
+  surfaces: []
+
+tone:
+  register: "you | we | impersonal"
+  # "you" = direct, "we" = inclusive tutorial, "impersonal" = reference book
+  formality: "casual | neutral | formal"
+  humor_allowed: true         # default true for readable tech books
+  profanity_allowed: false    # usually false; set true if the voice calls for it
+  calibration_passages:
+    # 1–3 short passages that exemplify the target voice. The Humanizer and
+    # Critic calibrate against these. Keep them in the style guide proper
+    # and reference them here.
+    - "see bible/style-guide.md § Calibration"
+
+structure:
+  type: "linear | modular | reference | hybrid"
+  # linear    = each chapter assumes the prior ones (tutorial)
+  # modular   = chapters are mostly independent (cookbook)
+  # reference = alphabetical or topical, skimmable
+  # hybrid    = tutorial first half, reference second half
+  chapter_length_target_words: 3500    # adjust per project
+  chapter_length_min: 2500
+  chapter_length_max: 5000
+  exercises: "none | per_section | per_chapter"
+
+conventions:
+  # Code style and formatting the book commits to.
+  code_language: "python"
+  code_style_guide: "PEP 8 + black"
+  cli_shell: "bash"
+  heading_case: "sentence"    # "sentence" or "title"
+  oxford_comma: true
+  dash_style: "em-dash with no spaces"
+  number_rule: "words < 10, digits >= 10 (except in code)"
+  date_format: "YYYY-MM-DD"
+  language_variant: "en-US"   # en-US, en-GB, es-AR, es-ES, etc.
+
+pipeline:
+  mode: "fast"                # "fast" (default) or "full"
+                              # fast: Writer → Technical Reviewer → Editor →
+                              #       Critic → Human
+                              # full: adds Humanizer → Reader-POV before Critic.
+                              # Use full when prose quality matters as much as
+                              # correctness (customer-facing books).
+                              # For most technical books, fast is enough
+                              # chapter-by-chapter; a polish pass across all
+                              # approved chapters is cheaper than paying
+                              # Humanizer + Reader-POV per chapter.
+  retry_cap: 2                # fast default 2, full default 3. When hit, the
+                              # pipeline triggers the structured escalation in
+                              # references/loopback-handoff.md — not a silent
+                              # "give up to human".
+  pre_draft_expansion: false  # Writer produces drafts/ch-NN/draft-plan.md
+                              # before draft.md. Useful for dense/reference
+                              # books where planning sections up front prevents
+                              # kitchen-sink chapters.
+  chapter_digest:
+    # Post-approval, the skill produces a 300–500-word digest per chapter that
+    # downstream Writers read INSTEAD of the full prior chapter. Prevents
+    # context bloat in long books. See references/chapter-digest.md.
+    enabled: true
+    target_words: 400
+    included_fields:          # what every digest MUST contain
+      - concepts_introduced
+      - concepts_reinforced
+      - running_examples_state
+      - open_forward_references
+      - terminology_decisions
+      - voice_calibration_sample
+  archive_drafts:
+    # After a chapter is approved, drafts/ch-NN/ moves to drafts/_archive/ch-NN/
+    # to keep drafts/ focused on in-flight work. See references/archiving.md.
+    enabled: true
+  coverage_audit:
+    # Phase 4 only. The Continuity Guardian's full-manuscript audit scans
+    # the assembled manuscript for terms used in prose but absent from
+    # knowledge-graph.yaml + glossary.md + prerequisites + outline-declared
+    # concepts. Output: bible/orphan-terms-audit.md. Advisory, not blocking
+    # — closes the gap left by the Critic's outline-2 rubric item, which
+    # only checks declared `concepts_used`, not the prose actually written.
+    # See references/agent-continuity-guardian.md § Orphan terms.
+    # Disable for short books, essays, or non-pedagogical references where
+    # KG/glossary discipline is not load-bearing.
+    enabled: true
+    severity_threshold:
+      # A term is reported as `major` (instead of the default `minor`) if
+      # EITHER condition holds. Both are signals of a load-bearing term.
+      major_min_occurrences: 5
+      major_min_chapters: 3
+  polish_pass:
+    # Phase 4 only, fast mode only. Batch-level Reader-POV + Humanizer
+    # over groups of 3–4 approved chapters. Catches drift visible across
+    # chapters that single-chapter passes miss (recurring AI-isms,
+    # batch-level pacing). Reader-POV's first read of the manuscript in
+    # fast mode (it doesn't run per chapter there). See
+    # references/pipeline.md § "Optional polish pass".
+    # In full mode this is ignored — Reader-POV already ran per chapter.
+    enabled: true
+    min_batch_size: 3       # below 3 chapters since last run, skip
+
+models:
+  # Per-role model assignment. The skill falls back to `default` when a role
+  # isn't set, and to claude-sonnet-4-6 if `models:` is missing entirely.
+  # See references/pipeline.md § "Model assignment" for recommended defaults.
+  default: "claude-sonnet-4-6"
+  writer: "claude-opus-4-6"
+  technical_reviewer: "claude-sonnet-4-6"
+  editor: "claude-sonnet-4-6"
+  humanizer: "claude-sonnet-4-6"      # bump to opus for voice-heavy books
+  reader_pov: "claude-sonnet-4-6"
+  critic: "claude-opus-4-6"
+  proofreader: "claude-sonnet-4-6"
+  continuity_guardian: "claude-sonnet-4-6"

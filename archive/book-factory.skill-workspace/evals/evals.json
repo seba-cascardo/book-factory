@@ -1,0 +1,33 @@
+{
+  "skill_name": "book-factory",
+  "evals": [
+    {
+      "id": 0,
+      "name": "corporate-guide-setup",
+      "prompt": "Necesito crear una guía interna de onboarding técnico para los desarrolladores nuevos de mi empresa (Metalsa Web, consultora de software de 40 personas; stack Next.js + Postgres + Vercel). Audiencia: devs junior que recién entran. Creá el proyecto de escritura en ./guia-onboarding, tomá supuestos razonables sin preguntarme nada, y dejame armado: estructura de carpetas, metadata del proyecto, scope, perfil de voz y el outline de secciones. No escribas las secciones todavía.",
+      "expected_output": "Proyecto scaffoldeado con perfil corporate-guide: bible/meta.yaml (profile corporate-guide, bloque organization con Metalsa Web, schema 3.0), scope.md, voice-profile.md con registro sobrio (sin mic-drops/cliffhangers/auto-referencia), outline/units.yaml con secciones autocontenidas y sin promesas de transformación al lector.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "scientific-paper-setup",
+      "prompt": "Quiero armar un paper científico sobre el impacto de asistentes LLM en la productividad de equipos de BI (estudio observacional, 12 equipos, datos ya recolectados). Armá el proyecto en ./paper-llm-bi con supuestos razonables sin preguntarme: scaffold, mapa inicial de claims, outline IMRaD con el orden de escritura correcto, y al final decime qué necesitás de mi lado para arrancar a escribir.",
+      "expected_output": "Proyecto con perfil scientific-paper: claims-map.yaml seeded, outline/units.yaml con secciones IMRaD y orden de escritura Methods→Results→Intro→Discussion→Abstract-último, citation policy visible declarada, lista concreta de faltantes (datos, fuentes para bible/sources/, estilo de cita).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "technical-book-ch1-pipeline",
+      "prompt": "Quiero escribir un libro técnico corto sobre expresiones regulares para analistas de datos (audiencia: gente que usa Python y pandas, nivel intermedio, ~8 capítulos). Armá el proyecto en ./libro-regex con supuestos razonables sin preguntarme nada, y escribí el capítulo 1 completo pasándolo por todo el pipeline de calidad hasta dejarlo listo para mi revisión, con su veredicto y evidencia.",
+      "expected_output": "Proyecto book-technical completo + drafts/unit-01/ con draft.md, tech-review.md, edit.md, humanized.md, coherence.md, critique.md y scorecard.yaml; veredicto computado del scorecard; el capítulo respeta el presupuesto de retórica (contado en evidence) y declara qué estructura de apertura de la rotación usó; packet de revisión humana presentado.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "literary-ch1-pipeline",
+      "prompt": "Quiero escribir una novela corta (6 capítulos) sobre un colectivero de Lanús que hereda un loro que repite frases de su padre muerto. Tono: realismo con humor melancólico, registro rioplatense, primera persona. Armá el proyecto en ./novela-loro con supuestos razonables sin preguntarme, y escribí el capítulo 1 completo por el pipeline hasta dejarlo listo para mi revisión.",
+      "expected_output": "Proyecto book-literary con characters/, plot-structure.md, voice-profile.md; drafts/unit-01/ con draft (friction inventory en el self-assessment, un VOICE-RISK flaggeado), edit, humanized (Humanizer conservador — sin reescritura masiva), reader-report, critique con scorecard del rubric literario itemizado.",
+      "files": []
+    }
+  ]
+}

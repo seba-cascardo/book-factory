@@ -1,0 +1,70 @@
+# bible/knowledge-graph.yaml — concept dependency map
+#
+# Phase 1.5 artifact. See references/knowledge-graph.md for the full spec.
+#
+# The graph is the authoritative list of what this book teaches and how the
+# ideas depend on each other. Outline, Writer, Technical Reviewer, Critic,
+# and Continuity Guardian all read this.
+
+schema_version: "2.3"
+
+prerequisites:
+  # What the reader knows on page 1. Anchors of all dependency chains.
+  # One entry per prerequisite, not a prose paragraph.
+  # Example:
+  # - id: basic_sql
+  #   one_liner: "Comfortable reading SELECT, JOIN, WHERE, GROUP BY queries."
+  # - id: terminal_usage
+  #   one_liner: "Can run commands in bash/zsh, understands pipes and redirection."
+  []
+
+concepts:
+  # Every teachable unit the book covers. A reader should be able to ask
+  # "where do I learn X?" for every concept listed here and get exactly
+  # one answer from the outline.
+  #
+  # Shape:
+  #   - id: <stable_snake_case_id>            # used in outline + tracker
+  #     name: "<Display Name>"                 # used in prose + tables
+  #     kind: term | mechanic | pattern | tool | convention | skill
+  #     one_liner: "<definition in one sentence>"
+  #     requires: [<ids>]                      # hard deps. Cycles are bugs.
+  #     builds_on: [<ids>]                     # soft deps. Reinforcement.
+  #     contrasts_with: [<ids>]                # taught together by contrast.
+  #     introduced_in: null                    # set during outlining (e.g., "ch-04")
+  #     reinforced_in: []                      # optional — chapters that revisit it
+  #
+  # Example:
+  # - id: associative_model
+  #   name: "Qlik Associative Model"
+  #   kind: mechanic
+  #   one_liner: "In-memory column store with automatic association by shared field names."
+  #   requires: []
+  #   builds_on: []
+  #   contrasts_with: [relational_model]
+  #   introduced_in: null
+  #   reinforced_in: []
+  # - id: set_analysis
+  #   name: "Set Analysis"
+  #   kind: mechanic
+  #   one_liner: "Scoping aggregations to a subset of rows by a set expression."
+  #   requires: [aggregation_functions, field_selections]
+  #   builds_on: [associative_model]
+  #   contrasts_with: []
+  #   introduced_in: null
+  #   reinforced_in: []
+  []
+
+constraints:
+  # Invariants the Knowledge Graph must satisfy before outlining. The skill
+  # verifies each when the graph is signed off and at every outline revision.
+  no_cycles_in_requires: true
+  every_chain_terminates: true          # in a prerequisite or another concept
+  every_concept_has_definition: true
+  every_concept_assigned_to_chapter: false  # flipped to true after outlining
+
+open_questions:
+  # Use while the graph is being built. Should be empty at sign-off.
+  # Example:
+  # - "Is 'variables' a concept on its own or part of 'load script'?"
+  []

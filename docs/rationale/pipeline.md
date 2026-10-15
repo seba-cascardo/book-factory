@@ -3,7 +3,7 @@
 Why the rules in `SKILL.md`, `references/pipeline.md`, `references/rubric*.md`
 and the nonfiction agent files are what they are. **Agents do not load this
 file**: rules live in the agent files, history lives here. Sources: the
-v2.x–v3.3 project postmortems and `REVIEW-v3.3-integral.md` (2026-09-25).
+v2.x–v3.3 project postmortems and `docs/reviews/REVIEW-v3.3-integral.md` (2026-09-25).
 Measurements are from real projects unless marked otherwise; most come from a
 single technical book (N=1), which is exactly why they are no longer repeated
 inside the rules.

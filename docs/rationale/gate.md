@@ -4,7 +4,7 @@ Why Phase 4.5 and the deterministic scripts are shaped the way they are. Agents
 and scripts do not load this file; they keep the rule and, at most, a
 `Why: docs/rationale/gate.md#<anchor>` pointer. Most numbers come from one
 reference book (18 chapters, ~156k words, technical, English) and from the v3.3
-integral review (`REVIEW-v3.3-integral.md` §5.2–5.3). N=1: treat them as the
+integral review (`docs/reviews/REVIEW-v3.3-integral.md` §5.2–5.3). N=1: treat them as the
 reason a rule exists, not as a law about every book.
 
 ## origin

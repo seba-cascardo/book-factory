@@ -1,0 +1,110 @@
+# Chapter entry — one per chapter in outline/chapters.yaml
+#
+# The skill reads this to know what the Writer is supposed to produce,
+# what the Critic is supposed to verify, and what the Continuity Guardian
+# is supposed to track.
+#
+# The literary and technical fields differ. Pick the block that matches
+# your project.type and delete the other.
+
+# ==============================
+# § Literary project — per chapter
+# ==============================
+
+- number: 7
+  title: "El café"
+  pov: "Marta"                     # who owns this chapter's POV
+  word_target: 3500
+  setting: "café en San Telmo, martes por la tarde"
+
+  beats:
+    # Ordered but not prescriptive on scene order — the outline is a
+    # checklist, not a shot list. The Critic checks that all beats appear.
+    - "Marta llega al café. Establece el tono de aislamiento."
+    - "Diego aparece inesperadamente. Primera fricción."
+    - "Diego revela el engaño del hermano (la primera mitad)."
+    - "Marta reacciona — necesita tiempo, no puede quedarse."
+    - "Marta se va sin terminar el café. Cierre sobre algo pequeño."
+
+  arcs_advanced:
+    # Which character arcs move in this chapter, and how
+    - character: "Marta"
+      movement: "pierde una capa de confianza — sale con menos"
+    - character: "Diego"
+      movement: "reaparece como personaje activo"
+
+  threads:
+    open_new:
+      - "Marta sospecha del hermano por primera vez"
+    advance:
+      - "la relación Marta–Diego"
+    close: []     # threads that resolve in this chapter
+
+  chekhov:
+    load: []      # objects/ideas introduced now to pay off later
+    fire: []      # things loaded earlier that resolve here
+
+  continuity_notes:
+    # Specific reminders the Writer must honor
+    - "Marta sigue con el tobillo lastimado de ch-6"
+    - "Es martes — no sábado; ajustar detalles del barrio"
+
+  scene_count_target: 2           # rough guidance, not a rule
+
+# ==============================
+# § Technical project — per chapter
+# ==============================
+
+- number: 5
+  title: "Services and service discovery"
+  purpose: "After this chapter, the reader can expose a Pod behind a Service
+           and have another Pod find it by DNS."
+  word_target: 3500
+
+  concepts_introduced:
+    # New concepts taught here. The Critic checks each one appears.
+    - "Service (ClusterIP)"
+    - "Service selector"
+    - "kube-dns / CoreDNS"
+    - "endpoints object"
+
+  concepts_used:
+    # Concepts from earlier chapters this one relies on. The Editor and
+    # Critic use this to verify the dependency graph — no forward references.
+    - "Pod (ch-2)"
+    - "Label (ch-2)"
+    - "Deployment (ch-4)"
+
+  motivation:
+    # Why the reader should care, in one sentence. The Writer opens with this.
+    text: "Pods come and go. You need a stable address."
+
+  examples:
+    # Concrete artifacts the chapter builds. The Technical Reviewer tests these
+    # as part of Axis A.
+    - name: "todo-list-service"
+      description: "Expose the todo-list Deployment from ch-4 as a Service."
+      runnable: true
+    - name: "notifier"
+      description: "Reach the todo-list Service by DNS name."
+      runnable: true
+
+  exercises:
+    # Optional. The Technical Reviewer verifies solvability.
+    - prompt: "Expose a second Deployment with a Service, and verify the
+               notifier can reach either by name."
+      difficulty: "easy"
+      uses_concepts: ["Service", "Deployment"]
+
+  forward_references:
+    # Things this chapter defers to a later chapter — Continuity Guardian tracks.
+    - "Ingress covered in ch-9"
+
+  closing_type: "bridge"    # "recap" or "bridge" — the Critic enforces one of these
+
+  word_breakdown:
+    # Optional rough pacing target
+    motivation: 300
+    first_concept: 800
+    example: 600
+    second_concept: 80

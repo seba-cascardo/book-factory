@@ -1,0 +1,120 @@
+# project-status.yaml — machine-readable state of the book project
+#
+# CONTRACT: this file is the authoritative source of truth for Phase Detection.
+# The skill reads this on every invocation to resume where it left off. Every
+# agent that advances state is responsible for updating the relevant fields
+# here. Humans read it to check progress and cost.
+#
+# If a field in this schema is missing from an existing project-status.yaml,
+# the skill treats it as a v<2.3 project and offers to migrate (fill in
+# sensible defaults, flag what it couldn't infer).
+
+schema_version: "2.3"                 # bump when the schema changes
+
+project:
+  name: "[short working title]"
+  type: "technical"                   # "technical" | "literary"
+  subtype: null                       # technical sub-types (see meta-technical.yaml):
+                                       # "tutorial" | "reference" | "cookbook" |
+                                       # "textbook" | "opinion" | null
+  created: "YYYY-MM-DD"
+  last_updated: "YYYY-MM-DD"
+  language: "es-AR"                    # matches meta.yaml:conventions.language_variant
+
+phase: "setup"
+# Allowed values (ordered):
+#   "init"              — project folder scaffolded, bible not started
+#   "setup"             — bible being assembled
+#   "knowledge-graph"   — (technical) concepts/dependencies map being built
+#   "outlining"         — outline/chapters.yaml being produced
+#   "drafting"          — per-chapter pipeline running
+#   "assembly"          — all chapters approved, full-manuscript review
+#   "complete"          — manuscript.md produced and signed off
+
+setup:
+  complete: false
+  steps_done: []
+  # Technical steps: [scope, audience, tone, structure, conventions,
+  #                   style_guide, sources, validation_surface]
+  # Literary steps:  [genre_influences, characters, world, plot, arcs,
+  #                   timeline, style_guide]
+
+knowledge_graph:
+  # Technical only. Produced in Phase 1.5 before outlining.
+  # See references/knowledge-graph.md.
+  complete: false
+  concepts_total: 0
+  concepts_unsequenced: 0             # concepts not yet assigned to a chapter
+  dependency_cycles: []                # should be empty at outline time
+  last_verified: null                  # YYYY-MM-DD when Writer/Critic last checked
+
+outline:
+  complete: false
+  chapters_planned: 0
+  knowledge_graph_verified: false      # outline assigns every concept; no forward-ref gaps
+  arc_verified: false                  # literary only — arcs map to chapters
+  last_revised: null                   # bumped when outline is edited mid-drafting
+
+chapters:
+  # One entry per chapter. Added as outline is built; updated during drafting.
+  # Example (copy this shape):
+  #
+  # - number: 1
+  #   title: "La llegada"
+  #   status: "not_started"
+  #     # Allowed statuses (ordered by pipeline position):
+  #     #   not_started | drafting | tech_review | editing | humanizing |
+  #     #   reader_pov | critic | awaiting_human | approved | archived
+  #   current_cycle: 0                 # loopbacks consumed (Reviewer+Critic+human)
+  #   retry_cap_hit: false
+  #   last_agent: null                 # name of last agent to run
+  #   last_verdict: null               # PASS | REVISE | REWORK | ESCALATE | null
+  #   loopback_target: null            # which agent runs next if REVISE
+  #   word_count: 0
+  #   digest_written: false            # see references/chapter-digest.md
+  #   approved_on: null                # YYYY-MM-DD
+  #   archived_on: null                # YYYY-MM-DD — drafts/ch-NN/ → drafts/_archive/
+  #   scorecard_last_pass: null        # rubric pass count at last Critic run
+  #   scorecard_last_fail: null        # rubric fail count at last Critic run
+
+cross_chapter_audit:
+  # Continuity Guardian cadence.
+  last_run_after_chapter: 0
+  next_due_after_chapter: 3            # default: every 3 approved chapters
+  outstanding_findings: 0
+
+retries:
+  # Per-chapter loopback counter. Cap enforced by pipeline.retry_cap in meta.yaml.
+  # Shared budget across Technical-Reviewer→Writer and Critic→any-agent cycles.
+  # When the cap is hit, the next non-PASS verdict triggers a structured
+  # escalation handoff — see references/loopback-handoff.md.
+  by_chapter: {}                       # e.g., { "ch-03": 2 }
+  cap_hits: []                         # e.g., [{ chapter: "ch-03", date: "2026-04-20" }]
+
+cost_observability:
+  # Visibility, not a budget cap. Lets the human see where tokens go so they
+  # can downgrade or skip roles that aren't earning their cost.
+  # Every agent call appends a row; the skill aggregates on read.
+  # Schema per row: { chapter, agent, model, input_tokens, output_tokens,
+  #                   cycle, timestamp }.
+  by_call: []
+  aggregates_by_chapter: {}
+  # Auto-computed on read. Example:
+  #   "ch-03":
+  #     total_tokens: 182450
+  #     by_agent:
+  #       writer:      { calls: 2, tokens: 84100, model: "claude-opus-4-6" }
+  #       tech_review: { calls: 2, tokens: 22800, model: "claude-sonnet-4-6" }
+  #       editor:      { calls: 2, tokens: 15200, model: "claude-sonnet-4-6" }
+  #       critic:      { calls: 2, tokens: 34200, model: "claude-opus-4-6" }
+  aggregates_by_agent: {}
+  # Auto-computed on read. Useful for "is Humanizer earning its keep?"
+
+notes:
+  # Free-form. Use for decisions, escalations, and anything that should survive
+  # to the next session.
+  # Example:
+  # - date: "2026-04-20"
+  #   author: "human"
+  #   note: "Escalated ch-03 — outline beat 4 doesn't work, restructured outline."
+  []
